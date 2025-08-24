@@ -1,0 +1,5 @@
+{
+  "name": "Property Cash Flow Projection",
+  "description": "An application for property research teams to analyze and project cash flow for multiple properties under various loan scenarios. Users can input property details, rental income, and expenses to generate a comprehensive financial comparison table.",
+  "requestFramePermissions": []
+}
