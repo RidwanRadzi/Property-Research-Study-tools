@@ -25,7 +25,7 @@ const calculateMonthlyInstallment = (principal: number, annualRate: number, year
 };
 
 
-export const calculateAllMetrics = (property: Property, settings: GlobalSettings, projectionMode: ProjectionMode): PropertyCalculations => {
+export const calculateAllMetrics = (property: Property, settings: GlobalSettings, projectionMode: ProjectionMode, loanPercentage1: number, loanPercentage2: number): PropertyCalculations => {
   const priceAsPerValuation = property.size * property.valuationPsf;
   const netPrice = property.size * property.netPsf;
   
@@ -39,8 +39,8 @@ export const calculateAllMetrics = (property: Property, settings: GlobalSettings
 
   const nettLoan = calculateMonthlyInstallment(netPrice, settings.interestRate, settings.loanTenure);
   
-  const calculateScenario = (loanAmount: number): LoanScenario => {
-    const { monthlyPayment, firstMonthPrincipal } = calculateMonthlyInstallment(loanAmount, settings.interestRate, settings.loanTenure);
+  const calculateScenario = (loanAmount: number, interestRate: number): LoanScenario => {
+    const { monthlyPayment, firstMonthPrincipal } = calculateMonthlyInstallment(loanAmount, interestRate, settings.loanTenure);
     const totalCommitmentMonthly = monthlyPayment + totalExpenses;
     const cashflow = rentalIncome - totalCommitmentMonthly;
     const cashflowExcludingPrincipal = cashflow + firstMonthPrincipal;
@@ -64,9 +64,12 @@ export const calculateAllMetrics = (property: Property, settings: GlobalSettings
       cashback: 0
   }
   
-  const loan90 = calculateScenario(priceAsPerValuation * 0.9);
-  const loan70 = calculateScenario(priceAsPerValuation * 0.7);
-  const lppsa = calculateScenario(property.spaPrice);
+  const loanScenario1 = calculateScenario(priceAsPerValuation * (loanPercentage1 / 100), settings.interestRate);
+  const loanScenario2 = calculateScenario(priceAsPerValuation * (loanPercentage2 / 100), settings.interestRate);
+  
+  const LPPSA_LOAN_CAP = 750000;
+  const lppsaLoanAmount = Math.min(property.spaPrice, LPPSA_LOAN_CAP);
+  const lppsa = calculateScenario(lppsaLoanAmount, settings.lppsaInterestRate);
 
   return {
     priceAsPerValuation,
@@ -78,8 +81,8 @@ export const calculateAllMetrics = (property: Property, settings: GlobalSettings
       interest: nettLoan.firstMonthInterest,
     },
     normalMortgage,
-    loan90,
-    loan70,
+    loanScenario1,
+    loanScenario2,
     lppsa
   };
 };

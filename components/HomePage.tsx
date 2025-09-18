@@ -1,25 +1,44 @@
+
 import React, { useState } from 'react';
 import Button from './ui/Button';
 import Input from './ui/Input';
-import { findComparableProperties } from '../services/geminiService';
-import { ComparableProperty, Layout, SummaryData } from '../types';
+import { findComparableProperties, findPropertyByName } from '../services/geminiService';
+import { ComparableProperty, Layout, SummaryData, LayoutRentalSummary, SavedSession } from '../types';
 import Spinner from './ui/Spinner';
-import CustomComparableForm from './CustomComparableForm';
 
 interface HomePageProps {
   onGenerateSummary: (summaryData: SummaryData) => void;
+  subjectPropertyName: string;
+  setSubjectPropertyName: (name: string) => void;
+  area: string;
+  setArea: (area: string) => void;
+  savedSessions: SavedSession[];
+  onLoadSession: (id: number) => void;
+  onDeleteSession: (id: number) => void;
 }
 
-const HomePage: React.FC<HomePageProps> = ({ onGenerateSummary }) => {
-  const [area, setArea] = useState('Cyberjaya');
-  const [propertyName, setPropertyName] = useState('Vybe');
-  const [residenceType, setResidenceType] = useState('Serviced Residence');
+const HomePage: React.FC<HomePageProps> = ({ 
+  onGenerateSummary, 
+  subjectPropertyName, 
+  setSubjectPropertyName, 
+  area, 
+  setArea,
+  savedSessions,
+  onLoadSession,
+  onDeleteSession,
+}) => {
+  const [residenceType, setResidenceType] = useState('Serviced Apartment/Condominium');
+  const [radius, setRadius] = useState('3');
   const [comparables, setComparables] = useState<ComparableProperty[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const [selectedLayoutIds, setSelectedLayoutIds] = useState<Set<string>>(new Set());
-  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const [specificSearchName, setSpecificSearchName] = useState('');
+  const [isSpecificSearchLoading, setIsSpecificSearchLoading] = useState(false);
+  const [specificSearchError, setSpecificSearchError] = useState<string | null>(null);
+
 
   const handleFindComparables = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +47,11 @@ const HomePage: React.FC<HomePageProps> = ({ onGenerateSummary }) => {
     setComparables([]);
     setSelectedLayoutIds(new Set());
     try {
-      const results = await findComparableProperties(area, propertyName, residenceType);
+      const numericRadius = parseFloat(radius);
+      if (isNaN(numericRadius) || numericRadius <= 0) {
+        throw new Error("Please enter a valid, positive radius.");
+      }
+      const results = await findComparableProperties(area, subjectPropertyName, residenceType, numericRadius);
       const resultsWithIds = results.map(c => ({
           ...c,
           id: crypto.randomUUID(),
@@ -39,6 +62,38 @@ const HomePage: React.FC<HomePageProps> = ({ onGenerateSummary }) => {
       setError(e.message || 'An unexpected error occurred.');
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  const handleSpecificSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!specificSearchName.trim()) return;
+
+    setIsSpecificSearchLoading(true);
+    setSpecificSearchError(null);
+
+    try {
+        const result = await findPropertyByName(specificSearchName, area);
+        if (result) {
+            if (comparables.some(c => c.name.toLowerCase() === result.name.toLowerCase())) {
+                setSpecificSearchError(`Property "${result.name}" is already in the list.`);
+            } else {
+                const propertyWithId: ComparableProperty = {
+                    ...result,
+                    id: crypto.randomUUID(),
+                    layouts: result.layouts.map(l => ({...l, id: crypto.randomUUID()})),
+                    isCustom: true
+                };
+                setComparables(prev => [...prev, propertyWithId]);
+                setSpecificSearchName('');
+            }
+        } else {
+            setSpecificSearchError(`Invalid name. Could not find property "${specificSearchName}".`);
+        }
+    } catch (e: any) {
+        setSpecificSearchError(e.message || 'An unexpected error occurred during search.');
+    } finally {
+        setIsSpecificSearchLoading(false);
     }
   };
 
@@ -70,60 +125,104 @@ const HomePage: React.FC<HomePageProps> = ({ onGenerateSummary }) => {
         return newSet;
     });
   };
-
-  const handleSaveCustomProperty = (newProperty: Omit<ComparableProperty, 'id'>) => {
-    const propertyWithId: ComparableProperty = {
-      ...newProperty,
-      id: crypto.randomUUID(),
-      layouts: newProperty.layouts.map(l => ({...l, id: crypto.randomUUID()})),
-      isCustom: true
-    };
-    setComparables(prev => [...prev, propertyWithId]);
-    setIsModalOpen(false);
-  };
   
   const handleAnalyze = () => {
     const selectedItems: { comparable: ComparableProperty, layout: Layout }[] = [];
     comparables.forEach(c => {
-        c.layouts.forEach(l => {
-            if (selectedLayoutIds.has(l.id)) {
-                selectedItems.push({ comparable: c, layout: l });
-            }
-        })
+      c.layouts.forEach(l => {
+        if (selectedLayoutIds.has(l.id)) {
+          selectedItems.push({ comparable: c, layout: l });
+        }
+      })
     });
 
     if (selectedItems.length === 0) return;
 
     const summary: SummaryData = {};
-    const groupedByLayout: { [key: string]: Layout[] } = {};
+    const groupedByDevelopment: { [key: string]: { layouts: Layout[], comparable: ComparableProperty } } = {};
 
-    selectedItems.forEach(({ layout }) => {
-        if (!groupedByLayout[layout.layoutType]) {
-            groupedByLayout[layout.layoutType] = [];
-        }
-        groupedByLayout[layout.layoutType].push(layout);
+    selectedItems.forEach(({ comparable, layout }) => {
+      const devName = comparable.name;
+      if (!groupedByDevelopment[devName]) {
+        groupedByDevelopment[devName] = { layouts: [], comparable: comparable };
+      }
+      groupedByDevelopment[devName].layouts.push(layout);
     });
 
-    for (const layoutType in groupedByLayout) {
-        const layouts = groupedByLayout[layoutType];
-        const prices = layouts.map(l => l.askingPrice);
-        const rentals = layouts.map(l => l.rentalPrice);
+    for (const devName in groupedByDevelopment) {
+      const { layouts, comparable } = groupedByDevelopment[devName];
+      const prices = layouts.map(l => l.askingPrice);
+      const sizes = layouts.map(l => l.sizeSqft);
 
-        const minPrice = Math.min(...prices);
-        const maxPrice = Math.max(...prices);
-        const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+      const minPrice = Math.min(...prices);
+      const maxPrice = Math.max(...prices);
+      const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
 
-        const minRental = Math.min(...rentals);
-        const maxRental = Math.max(...rentals);
-        const avgRental = rentals.reduce((a, b) => a + b, 0) / rentals.length;
+      const minSize = Math.min(...sizes);
+      const maxSize = Math.max(...sizes);
+      const avgSize = sizes.reduce((a, b) => a + b, 0) / sizes.length;
 
-        summary[layoutType] = {
-            priceRange: `RM ${minPrice.toLocaleString()} - RM ${maxPrice.toLocaleString()}`,
-            avgPrice,
-            rentalRange: `RM ${minRental.toLocaleString()} - RM ${maxRental.toLocaleString()}`,
-            avgRental,
-            count: layouts.length,
-        };
+      const sizeRange = minSize === maxSize ? `${minSize.toLocaleString()} sqft` : `${minSize.toLocaleString()} - ${maxSize.toLocaleString()} sqft`;
+
+      const avgPricePsf = avgPrice / avgSize;
+
+      // Rental breakdown by layout type
+      const rentalBreakdown: LayoutRentalSummary[] = [];
+      const groupedByLayoutType: { [key: string]: Layout[] } = {};
+      layouts.forEach(layout => {
+          if (!groupedByLayoutType[layout.layoutType]) {
+              groupedByLayoutType[layout.layoutType] = [];
+          }
+          groupedByLayoutType[layout.layoutType].push(layout);
+      });
+
+      for (const layoutType in groupedByLayoutType) {
+          const layoutGroup = groupedByLayoutType[layoutType];
+          const rentalsInGroup = layoutGroup.map(l => l.rentalPrice);
+          const sizesInGroup = layoutGroup.map(l => l.sizeSqft);
+          const pricesInGroup = layoutGroup.map(l => l.askingPrice);
+          
+          const minRental = Math.min(...rentalsInGroup);
+          const maxRental = Math.max(...rentalsInGroup);
+          
+          const minSizeInGroup = Math.min(...sizesInGroup);
+          const maxSizeInGroup = Math.max(...sizesInGroup);
+
+          const minAskingPrice = Math.min(...pricesInGroup);
+          const maxAskingPrice = Math.max(...pricesInGroup);
+          
+          const totalRental = rentalsInGroup.reduce((a, b) => a + b, 0);
+          const totalSize = sizesInGroup.reduce((a, b) => a + b, 0);
+          const totalAskingPrice = pricesInGroup.reduce((a,b) => a+b, 0);
+
+          const avgRentalPsf = totalSize > 0 ? totalRental / totalSize : 0;
+          const avgAskingPricePsf = totalSize > 0 ? totalAskingPrice / totalSize : 0;
+
+          rentalBreakdown.push({
+              layoutType: layoutType,
+              rentalRange: `RM ${minRental.toLocaleString()} - RM ${maxRental.toLocaleString()}`,
+              sizeRange: minSizeInGroup === maxSizeInGroup ? `${minSizeInGroup.toLocaleString()} sqft` : `${minSizeInGroup.toLocaleString()} - ${maxSizeInGroup.toLocaleString()} sqft`,
+              avgRentalPsf: avgRentalPsf,
+              askingPriceRange: `RM ${minAskingPrice.toLocaleString()} - RM ${maxAskingPrice.toLocaleString()}`,
+              avgAskingPricePsf: avgAskingPricePsf,
+              count: layoutGroup.length
+          });
+      }
+
+      rentalBreakdown.sort((a, b) => a.layoutType.localeCompare(b.layoutType));
+
+
+      summary[devName] = {
+        priceRange: `RM ${minPrice.toLocaleString()} - RM ${maxPrice.toLocaleString()}`,
+        avgPrice,
+        sizeRange,
+        avgPricePsf,
+        rentalBreakdown,
+        count: layouts.length,
+        yearOfCompletion: comparable.yearOfCompletion,
+        totalUnits: comparable.totalUnits,
+        tenure: comparable.tenure,
+      };
     }
     
     onGenerateSummary(summary);
@@ -134,7 +233,7 @@ const HomePage: React.FC<HomePageProps> = ({ onGenerateSummary }) => {
     <div className="flex flex-col items-center w-full">
       <header className="text-center mb-10 w-full">
         <h1 className="text-5xl font-bold text-[#700d1d] tracking-tight">
-          Property Comparables Analysis
+          Far Capital Pre Study
         </h1>
         <p className="text-gray-600 mt-4 text-lg max-w-2xl mx-auto">
           Enter your subject property to find AI-generated comparables. Select the best fits, add your own, and generate a market summary.
@@ -147,11 +246,11 @@ const HomePage: React.FC<HomePageProps> = ({ onGenerateSummary }) => {
             <label htmlFor="area" className="block text-sm font-medium text-gray-700 mb-1">Area / Location</label>
             <Input id="area" type="text" value={area} onChange={e => setArea(e.target.value)} placeholder="e.g., Cyberjaya" required />
           </div>
-          <div>
+          <div className="md:col-span-2">
             <label htmlFor="propertyName" className="block text-sm font-medium text-gray-700 mb-1">Property Name</label>
-            <Input id="propertyName" type="text" value={propertyName} onChange={e => setPropertyName(e.target.value)} placeholder="e.g., Vybe" required />
+            <Input id="propertyName" type="text" value={subjectPropertyName} onChange={e => setSubjectPropertyName(e.target.value)} placeholder="e.g., Vybe" required />
           </div>
-          <div>
+          <div className="md:col-span-2">
             <label htmlFor="residenceType" className="block text-sm font-medium text-gray-700 mb-1">Residence Type</label>
             <select 
               id="residenceType" 
@@ -160,26 +259,58 @@ const HomePage: React.FC<HomePageProps> = ({ onGenerateSummary }) => {
               required
               className="w-full h-10 bg-white text-gray-900 border border-gray-300 rounded-md shadow-sm px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#700d1d] focus:border-[#700d1d] transition duration-150 ease-in-out"
             >
-                <option>Serviced Residence</option>
+                <option>Serviced Apartment/Condominium</option>
                 <option>Apartment</option>
                 <option>Landed Property</option>
             </select>
           </div>
-          <Button type="submit" disabled={isLoading} className="md:col-start-4 w-full h-10">
+          <div>
+            <label htmlFor="radius" className="block text-sm font-medium text-gray-700 mb-1">Radius (km)</label>
+            <Input id="radius" type="number" value={radius} onChange={e => setRadius(e.target.value)} placeholder="e.g., 3" required min="1" />
+          </div>
+          <Button type="submit" disabled={isLoading} className="w-full h-10">
             {isLoading ? <><Spinner /> Searching...</> : 'Find Comparables'}
           </Button>
         </form>
 
         {error && <div className="mt-6 text-center text-red-600 bg-red-50 p-4 rounded-md">{error}</div>}
         
-        <div className="mt-4 text-right">
-            <Button onClick={() => setIsModalOpen(true)} variant="primary" className="bg-gray-600 hover:bg-gray-500 focus:ring-gray-500">
-                Add Custom Comparable
-            </Button>
-        </div>
+        <form onSubmit={handleSpecificSearch} className="mt-6 w-full max-w-7xl bg-gray-50 p-4 rounded-lg shadow-lg border border-gray-200">
+            <h3 className="font-semibold text-gray-800 text-lg mb-3">Add a Specific Property</h3>
+            <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
+                <div className="flex-grow w-full">
+                    <label htmlFor="specific-property-name" className="block text-sm font-medium text-gray-700 mb-1">Property Name</label>
+                    <Input id="specific-property-name" type="text" value={specificSearchName} onChange={e => setSpecificSearchName(e.target.value)} placeholder="e.g., The Tamarind" required />
+                </div>
+                <Button type="submit" disabled={isSpecificSearchLoading || !area} className="h-10 w-full sm:w-auto flex-shrink-0" title={!area ? "Please enter an Area / Location in the main form first" : ""}>
+                    {isSpecificSearchLoading ? <><Spinner /> Searching...</> : 'Add to List'}
+                </Button>
+            </div>
+            {specificSearchError && <div className="mt-2 text-sm text-red-600">{specificSearchError}</div>}
+        </form>
+
+        {savedSessions.length > 0 && (
+          <div className="mt-8 w-full">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">My Recent Searches</h2>
+              <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-4 space-y-3">
+                  {savedSessions.map(session => (
+                      <div key={session.id} className="flex flex-wrap justify-between items-center p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors gap-4">
+                          <div>
+                              <p className="font-semibold text-gray-900">{session.name}</p>
+                              <p className="text-sm text-gray-500">Saved on: {new Date(session.date).toLocaleString()}</p>
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0">
+                              <Button onClick={() => onLoadSession(session.id)} size="sm">Load</Button>
+                              <Button onClick={() => onDeleteSession(session.id)} variant="danger" size="sm">Delete</Button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+        )}
 
         {comparables.length > 0 && (
-          <div className="mt-4 overflow-x-auto bg-white rounded-lg shadow-2xl ring-1 ring-gray-200">
+          <div className="mt-8 overflow-x-auto bg-white rounded-lg shadow-2xl ring-1 ring-gray-200">
             <table className="min-w-full text-sm text-left">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -210,7 +341,7 @@ const HomePage: React.FC<HomePageProps> = ({ onGenerateSummary }) => {
                                                 <span>{prop.name}</span>
                                             </div>
                                             <span className="block text-xs font-normal text-gray-500 ml-6">~{prop.distanceKm.toFixed(1)} km away</span>
-                                            {prop.isCustom && <span className="block text-xs font-bold text-[#700d1d] ml-6 mt-1">CUSTOM</span>}
+                                            {prop.isCustom && <span className="block text-xs font-bold text-[#700d1d] ml-6 mt-1">MANUALLY ADDED</span>}
                                         </td>
                                     )}
                                     {layoutIndex === 0 && (
@@ -247,7 +378,6 @@ const HomePage: React.FC<HomePageProps> = ({ onGenerateSummary }) => {
 
       </main>
       
-      {isModalOpen && <CustomComparableForm onSave={handleSaveCustomProperty} onClose={() => setIsModalOpen(false)} />}
     </div>
   );
 };

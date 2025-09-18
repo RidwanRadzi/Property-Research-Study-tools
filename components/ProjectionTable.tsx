@@ -1,7 +1,8 @@
-import React, { memo } from 'react';
-import { Property, PropertyCalculations, ProjectionMode } from '../types';
+import React, { memo, useState, useEffect } from 'react';
+import { Property, PropertyCalculations, ProjectionMode, RentalAssumption } from '../types';
 import Input from './ui/Input';
 import Button from './ui/Button';
+import Select from './ui/Select';
 
 // Define discriminated union for table row types
 type SectionRow = {
@@ -26,7 +27,23 @@ type ValueRow = {
   isNotCurrency?: boolean;
 };
 
-type TableRow = SectionRow | InputRow | ValueRow;
+type EditableSectionRow = {
+  isEditableSection: true;
+  label: string;
+  value: number;
+  onChange: (newValue: number) => void;
+};
+
+type DerivedInputRow = {
+  isDerivedInput: true;
+  label: string;
+  derivedField: 'priceAsPerValuation' | 'netPrice';
+  value: (d: PropertyCalculations) => number;
+  subLabel?: string;
+};
+
+type TableRow = SectionRow | InputRow | ValueRow | EditableSectionRow | DerivedInputRow;
+
 
 interface ProjectionTableProps {
   properties: Property[];
@@ -34,7 +51,67 @@ interface ProjectionTableProps {
   onUpdateProperty: (id: number, field: keyof Property, value: string | number) => void;
   onRemoveProperty: (id: number) => void;
   projectionMode: ProjectionMode;
+  loanPercentage1: number;
+  setLoanPercentage1: (value: number) => void;
+  loanPercentage2: number;
+  setLoanPercentage2: (value: number) => void;
+  rentalAssumptions: RentalAssumption[];
 }
+
+// A new component to handle the complex state of a derived, but editable, input field.
+// This prevents the user's input from being overridden on every keystroke.
+interface DerivedInputCellProps {
+  propertyId: number;
+  propertySize: number;
+  derivedField: 'priceAsPerValuation' | 'netPrice';
+  calculatedValue: number;
+  onUpdateProperty: (id: number, field: keyof Property, value: string | number) => void;
+}
+const DerivedInputCell: React.FC<DerivedInputCellProps> = memo(({
+  propertyId,
+  propertySize,
+  derivedField,
+  calculatedValue,
+  onUpdateProperty
+}) => {
+  const [inputValue, setInputValue] = useState(String(Math.round(calculatedValue)));
+
+  useEffect(() => {
+    // This effect syncs the local input state with the calculated value from props.
+    // It's crucial for when an external change (like editing PSF) should update this cell.
+    const calculatedString = String(Math.round(calculatedValue));
+    if (calculatedString !== inputValue) {
+       setInputValue(calculatedString);
+    }
+  }, [calculatedValue]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputValue(e.target.value);
+  };
+
+  const handleBlur = () => {
+    // On blur, we commit the change. Calculate the new PSF from the user's input
+    // and update the global state. The useEffect will then handle snapping the
+    // input value to the newly calculated price based on the (potentially rounded) PSF.
+    const numValue = inputValue ? parseFloat(inputValue) : 0;
+    if (propertySize > 0) {
+      const newPsf = numValue / propertySize;
+      const psfField = derivedField === 'priceAsPerValuation' ? 'valuationPsf' : 'netPsf';
+      onUpdateProperty(propertyId, psfField, Math.round(newPsf));
+    }
+  };
+
+  return (
+    <Input
+      type="number"
+      value={inputValue}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      className="bg-transparent focus:bg-white"
+    />
+  );
+});
+
 
 const formatCurrency = (value: number) => {
   const isNegative = value < 0;
@@ -85,9 +162,8 @@ const PropertyHeader: React.FC<{ property: Property; onRemove: (id: number) => v
     </th>
 ));
 
-const getScenarioRows = (title: string, selector: (d: PropertyCalculations) => any, cashflowLabel: string, includeCashback = true): TableRow[] => {
+const getScenarioMetricRows = (selector: (d: PropertyCalculations) => any, cashflowLabel: string, includeCashback = true): TableRow[] => {
     const rows: TableRow[] = [
-        { isSection: true, label: title },
         { isInput: false, label: 'Total Commitment Monthly', value: (d: PropertyCalculations) => selector(d).totalCommitmentMonthly },
         { isInput: false, label: 'Commitment', value: (d: PropertyCalculations) => selector(d).commitment, subLabel: 'Monthly Loan' },
         { isInput: false, label: cashflowLabel, value: (d: PropertyCalculations) => selector(d).cashflow },
@@ -105,6 +181,11 @@ const ProjectionTable: React.FC<ProjectionTableProps> = ({
   onUpdateProperty,
   onRemoveProperty,
   projectionMode,
+  loanPercentage1,
+  setLoanPercentage1,
+  loanPercentage2,
+  setLoanPercentage2,
+  rentalAssumptions,
 }) => {
 
   const handleInputChange = (id: number, field: keyof Property, value: string) => {
@@ -114,7 +195,7 @@ const ProjectionTable: React.FC<ProjectionTableProps> = ({
   const handleTextChange = (id: number, field: keyof Property, value: string) => {
     onUpdateProperty(id, field, value);
   };
-
+  
   const incomeAndExpensesSection: TableRow[] = [
     { isSection: true, label: "Income & Expenses (Monthly)" },
     { isInput: false, label: 'Monthly Instalment at Nett', value: (d) => d.nettLoan.monthlyInstallment },
@@ -148,9 +229,9 @@ const ProjectionTable: React.FC<ProjectionTableProps> = ({
     { isSection: true, label: "Pricing & Valuation" },
     { label: 'SPA Price (estimate)', isInput: true, field: 'spaPrice' },
     { label: 'Valuation PSF', isInput: true, field: 'valuationPsf', subLabel: '**ask acquisition' },
-    { isInput: false, label: 'Price as per valuation', value: (d) => d.priceAsPerValuation },
+    { isDerivedInput: true, label: 'Price as per valuation', derivedField: 'priceAsPerValuation', value: (d) => d.priceAsPerValuation },
     { label: 'Net PSF', isInput: true, field: 'netPsf' },
-    { isInput: false, label: 'Net Price', value: (d) => d.netPrice },
+    { isDerivedInput: true, label: 'Net Price', derivedField: 'netPrice', value: (d) => d.netPrice },
 
     ...incomeAndExpensesSection,
     
@@ -160,9 +241,17 @@ const ProjectionTable: React.FC<ProjectionTableProps> = ({
     { isInput: false, label: 'Net Cashflow (no cashback)', value: (d) => d.normalMortgage.cashflow },
     { isInput: false, label: 'Net Cashflow excluding Principal', value: (d) => d.normalMortgage.cashflowExcludingPrincipal },
     
-    ...getScenarioRows("90% loan at valuation", (d) => d.loan90, 'Cashflow (90% loan)'),
-    ...getScenarioRows("70% loan at valuation", (d) => d.loan70, 'Cashflow (70% loan)'),
-    ...getScenarioRows("LPPSA at SPA", (d) => d.lppsa, 'Cashflow (LPPSA loan)'),
+    // Editable Scenario 1
+    { isEditableSection: true, label: 'Loan at valuation', value: loanPercentage1, onChange: setLoanPercentage1 },
+    ...getScenarioMetricRows((d) => d.loanScenario1, `Cashflow (${loanPercentage1}% loan)`),
+
+    // Editable Scenario 2
+    { isEditableSection: true, label: 'Loan at valuation', value: loanPercentage2, onChange: setLoanPercentage2 },
+    ...getScenarioMetricRows((d) => d.loanScenario2, `Cashflow (${loanPercentage2}% loan)`),
+
+    // LPPSA
+    { isSection: true, label: "LPPSA at SPA" },
+    ...getScenarioMetricRows((d) => d.lppsa, 'Cashflow (LPPSA loan)'),
   ];
 
   return (
@@ -181,16 +270,76 @@ const ProjectionTable: React.FC<ProjectionTableProps> = ({
             return <tr key={`section-${rowIndex}`}><SectionHeader label={row.label} /></tr>;
           }
 
-          // By handling the 'isSection' case above and returning, TypeScript now correctly
-          // infers that `row` must be of type `InputRow` or `ValueRow` below.
+          if ('isEditableSection' in row) {
+            return (
+              <tr key={`section-editable-${rowIndex}`}>
+                <th colSpan={999} className="p-3 text-left font-bold text-lg bg-gray-100 text-[#700d1d] sticky top-0 z-20">
+                   <div className="flex items-center gap-2">
+                    <span>{row.label}</span>
+                    <Input 
+                      type="number"
+                      value={row.value}
+                      onChange={e => row.onChange(parseFloat(e.target.value) || 0)}
+                      className="w-20 py-1 text-lg font-bold"
+                      step="1"
+                    />
+                    <span className="text-lg font-bold">%</span>
+                  </div>
+                </th>
+              </tr>
+            );
+          }
+          
+          if ('isDerivedInput' in row) {
+            return (
+              <tr key={`${row.label}-${rowIndex}`} className="hover:bg-gray-50">
+                <RowLabel label={row.label} subLabel={row.subLabel} />
+                {properties.map((p, pIndex) => (
+                  <td key={p.id} className="p-1.5 border-l border-gray-200 bg-yellow-50">
+                    <DerivedInputCell
+                      propertyId={p.id}
+                      propertySize={p.size}
+                      derivedField={row.derivedField}
+                      calculatedValue={row.value(calculatedData[pIndex])}
+                      onUpdateProperty={onUpdateProperty}
+                    />
+                  </td>
+                ))}
+              </tr>
+            );
+          }
+
+          // By handling the other cases above, TypeScript infers `row` must be of type `InputRow` or `ValueRow` below.
           return (
             <tr key={`${row.label}-${rowIndex}`} className="hover:bg-gray-50">
               <RowLabel label={row.label} subLabel={row.subLabel} />
               {properties.map((p, pIndex) => {
-                // Using a more robust type guard ('field' in row) to help TypeScript with type narrowing in closures
-                if ('field' in row) {
+                if ('field' in row) { // Type guard for InputRow
+                    if (row.field === 'bedroomsType') {
+                        const currentTypeExists = rentalAssumptions.some(a => a.type === p.bedroomsType);
+                        return (
+                             <td key={p.id} className="p-1.5 border-l border-gray-200 bg-yellow-50">
+                                <Select
+                                    value={p.bedroomsType}
+                                    onChange={e => handleTextChange(p.id, 'bedroomsType', e.target.value)}
+                                    className="bg-transparent focus:bg-white"
+                                >
+                                    {!currentTypeExists && p.bedroomsType && (
+                                        <option key={p.bedroomsType} value={p.bedroomsType}>
+                                            {p.bedroomsType}
+                                        </option>
+                                    )}
+                                    {rentalAssumptions.map(assumption => (
+                                        <option key={assumption.id} value={assumption.type}>
+                                        {assumption.type}
+                                        </option>
+                                    ))}
+                                </Select>
+                             </td>
+                        );
+                    }
                   return (
-                    <td key={p.id} className="p-1.5 border-l border-gray-200">
+                    <td key={p.id} className="p-1.5 border-l border-gray-200 bg-yellow-50">
                       {row.inputType === 'text' ?
                         <Input
                           type="text"
@@ -207,7 +356,7 @@ const ProjectionTable: React.FC<ProjectionTableProps> = ({
                       }
                     </td>
                   );
-                } else {
+                } else { // Type guard for ValueRow
                   return (
                     <td key={p.id} className={`p-1.5 border-l border-gray-200 ${row.highlight ? 'bg-red-50' : ''}`}>
                       <div className="p-2 h-10 flex items-center">
