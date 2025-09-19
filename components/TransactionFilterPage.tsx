@@ -1,22 +1,68 @@
 
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Transaction } from '../types';
+import { Transaction, TransactionSummary } from '../types';
 import Button from './ui/Button';
 import Spinner from './ui/Spinner';
 
 interface TransactionFilterPageProps {
     onNavigateBack: () => void;
     onNavigateToAreaAnalysis: () => void;
+    onSetSummaries: (summaries: Omit<TransactionSummary, 'id'>[]) => void;
 }
 
-const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigateBack, onNavigateToAreaAnalysis }) => {
+const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigateBack, onNavigateToAreaAnalysis, onSetSummaries }) => {
     const [filteredData, setFilteredData] = useState<Transaction[]>([]);
     const [headers, setHeaders] = useState<string[]>([]);
     const [fileName, setFileName] = useState<string | null>(null);
     const [processing, setProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const calculateSummaries = (data: Transaction[]) => {
+        const headers = data.length > 0 ? Object.keys(data[0]) : [];
+        
+        if (headers.length < 5) {
+            setError("The uploaded file must have at least 5 columns. 'Development Name' should be the 3rd column and 'Price (RM)' should be the 5th.");
+            onSetSummaries([]);
+            return;
+        }
+
+        const devKey = headers[2]; // 3rd column for development name
+        const priceKey = headers[4]; // 5th column for Price (RM)
+
+        const groupedByDev: { [key: string]: number[] } = {};
+        data.forEach(row => {
+            const devName = row[devKey];
+            const price = parseFloat(String(row[priceKey]).replace(/,/g, ''));
+            if (devName && !isNaN(price)) {
+                if (!groupedByDev[devName]) {
+                    groupedByDev[devName] = [];
+                }
+                groupedByDev[devName].push(price);
+            }
+        });
+
+        const summaries: Omit<TransactionSummary, 'id'>[] = Object.entries(groupedByDev).map(([devName, prices]) => {
+            prices.sort((a, b) => a - b);
+            let medianPrice;
+            const mid = Math.floor(prices.length / 2);
+            if (prices.length % 2 === 0) {
+                medianPrice = (prices[mid - 1] + prices[mid]) / 2;
+            } else {
+                medianPrice = prices[mid];
+            }
+
+            return {
+                development: devName,
+                medianPrice: medianPrice,
+                transactionCount: prices.length
+            };
+        });
+        
+        summaries.sort((a, b) => a.development.localeCompare(b.development));
+        onSetSummaries(summaries);
+    };
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -64,14 +110,17 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
 
                 if (cleanedData.length === 0) {
                     setError("No valid individual transactions found after filtering. All rows were removed.");
+                    onSetSummaries([]);
                 } else {
                     setHeaders(Object.keys(cleanedData[0]));
                     setFilteredData(cleanedData);
+                    calculateSummaries(cleanedData);
                 }
                 
                 setFileName(file.name);
             } catch (err: any) {
                 setError(`Error processing file: ${err.message}`);
+                onSetSummaries([]);
             } finally {
                 setProcessing(false);
             }

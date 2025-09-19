@@ -8,7 +8,7 @@ import AreaAnalysisPage from './components/AreaAnalysisPage';
 import FloorplanPage from './components/FloorplanPage';
 import UnitListingPage from './components/UnitListingPage';
 import RoomRentalPage from './components/RoomRentalPage';
-import { Property, SummaryData, Floorplan, UnitListing, GlobalSettings, ProjectionMode, SavedSession } from './types';
+import { Property, SummaryData, Floorplan, UnitListing, GlobalSettings, ProjectionMode, SavedSession, TransactionSummary } from './types';
 
 type Page = 'home' | 'summary' | 'transactionFilter' | 'areaAnalysis' | 'projection' | 'floorplan' | 'unitListing' | 'roomRental';
 
@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [floorplans, setFloorplans] = useState<Floorplan[]>([]);
   const [unitListing, setUnitListing] = useState<UnitListing | null>(null);
+  const [transactionSummaries, setTransactionSummaries] = useState<TransactionSummary[]>([]);
 
   // State lifted from ProjectionPage for session management
   const [projectionMode, setProjectionMode] = useState<ProjectionMode>('wholeUnit');
@@ -77,6 +78,7 @@ const App: React.FC = () => {
       summary,
       floorplans,
       unitListing,
+      transactionSummaries,
       globalSettings,
       projectionMode,
       loanPercentage1,
@@ -103,6 +105,7 @@ const App: React.FC = () => {
       setSummary(sessionToLoad.summary);
       setFloorplans(sessionToLoad.floorplans);
       setUnitListing(sessionToLoad.unitListing);
+      setTransactionSummaries(sessionToLoad.transactionSummaries || []);
       setGlobalSettings(sessionToLoad.globalSettings);
       setProjectionMode(sessionToLoad.projectionMode);
       setLoanPercentage1(sessionToLoad.loanPercentage1);
@@ -236,6 +239,17 @@ const App: React.FC = () => {
     }
     navigateTo('projection');
   };
+  
+  const handleSetTransactionSummaries = (summaries: Omit<TransactionSummary, 'id'>[]) => {
+    const summariesWithIds = summaries.map(s => ({ ...s, id: crypto.randomUUID() }));
+    setTransactionSummaries(summariesWithIds);
+  };
+
+  const handleUpdateTransactionSummary = (id: string, field: keyof Omit<TransactionSummary, 'id'>, value: string | number) => {
+      setTransactionSummaries(prev =>
+          prev.map(s => (s.id === id ? { ...s, [field]: value } : s))
+      );
+  };
 
 
   return (
@@ -263,6 +277,7 @@ const App: React.FC = () => {
         <TransactionFilterPage
           onNavigateBack={() => navigateTo('summary')}
           onNavigateToAreaAnalysis={() => navigateTo('areaAnalysis')}
+          onSetSummaries={handleSetTransactionSummaries}
         />
       )}
       {page === 'areaAnalysis' && (
@@ -292,6 +307,8 @@ const App: React.FC = () => {
           loanPercentage2={loanPercentage2}
           setLoanPercentage2={setLoanPercentage2}
           onSaveSession={handleSaveSession}
+          transactionSummaries={transactionSummaries}
+          onUpdateTransactionSummary={handleUpdateTransactionSummary}
         />
       )}
       {page === 'floorplan' && (

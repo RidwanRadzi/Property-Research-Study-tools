@@ -106,6 +106,7 @@ export interface Transaction {
 }
 
 export interface TransactionSummary {
+  id: string;
   development: string;
   medianPrice: number;
   transactionCount: number;
@@ -184,6 +185,7 @@ export interface SavedSession {
   summary: SummaryData | null;
   floorplans: Floorplan[];
   unitListing: UnitListing | null;
+  transactionSummaries: TransactionSummary[];
   // State from ProjectionPage.tsx
   globalSettings: GlobalSettings;
   projectionMode: ProjectionMode;

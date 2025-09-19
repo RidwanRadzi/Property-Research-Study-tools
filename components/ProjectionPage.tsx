@@ -1,11 +1,12 @@
 
 import React from 'react';
-import { Property, GlobalSettings as GlobalSettingsType, ProjectionMode } from '../types';
+import { Property, GlobalSettings as GlobalSettingsType, ProjectionMode, TransactionSummary } from '../types';
 import ProjectionTable from './ProjectionTable';
 import GlobalSettings from './GlobalSettings';
 import { calculateAllMetrics } from '../services/loanCalculator';
 import Button from './ui/Button';
 import Toggle from './ui/Toggle';
+import TransactionSummaryDisplay from './TransactionSummaryDisplay';
 
 interface ProjectionPageProps {
   properties: Property[];
@@ -25,6 +26,8 @@ interface ProjectionPageProps {
   loanPercentage2: number;
   setLoanPercentage2: (value: number) => void;
   onSaveSession: () => void;
+  transactionSummaries: TransactionSummary[];
+  onUpdateTransactionSummary: (id: string, field: keyof Omit<TransactionSummary, 'id'>, value: string | number) => void;
 }
 
 const ProjectionPage: React.FC<ProjectionPageProps> = ({
@@ -45,6 +48,8 @@ const ProjectionPage: React.FC<ProjectionPageProps> = ({
   loanPercentage2,
   setLoanPercentage2,
   onSaveSession,
+  transactionSummaries,
+  onUpdateTransactionSummary,
 }) => {
 
   const calculatedData = properties.map(p => calculateAllMetrics(p, globalSettings, projectionMode, loanPercentage1, loanPercentage2));
@@ -70,6 +75,11 @@ const ProjectionPage: React.FC<ProjectionPageProps> = ({
             />
            </div>
         </div>
+
+        <TransactionSummaryDisplay 
+            summaries={transactionSummaries}
+            onUpdate={onUpdateTransactionSummary}
+        />
         
         <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
           <Button onClick={onNavigateBack} variant="primary" className="bg-gray-600 hover:bg-gray-500 focus:ring-gray-500">
