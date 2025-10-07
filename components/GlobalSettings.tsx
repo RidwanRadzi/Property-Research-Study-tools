@@ -112,6 +112,62 @@ const GlobalSettings: React.FC<GlobalSettingsProps> = ({ settings, onSettingsCha
       <hr className="my-4 border-gray-200"/>
 
       <div>
+        <h3 className="text-lg font-semibold mb-3 text-gray-800">Airbnb Assumptions</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label htmlFor="airbnbOperatorFee" className="block text-xs font-medium text-gray-600 mb-1">
+                Operator Fee (%)
+              </label>
+              <Input
+                id="airbnbOperatorFee"
+                type="number"
+                value={settings.airbnbOperatorFee}
+                onChange={e => handleChange('airbnbOperatorFee', e.target.value)}
+                className="py-1"
+              />
+            </div>
+            <div>
+              <label htmlFor="airbnbCurrentOccupancy" className="block text-xs font-medium text-gray-600 mb-1">
+                Current Case Occ. (%)
+              </label>
+              <Input
+                id="airbnbCurrentOccupancy"
+                type="number"
+                value={settings.airbnbCurrentOccupancy}
+                onChange={e => handleChange('airbnbCurrentOccupancy', e.target.value)}
+                className="py-1"
+              />
+            </div>
+            <div>
+              <label htmlFor="airbnbBestOccupancy" className="block text-xs font-medium text-gray-600 mb-1">
+                Best Case Occ. (%)
+              </label>
+              <Input
+                id="airbnbBestOccupancy"
+                type="number"
+                value={settings.airbnbBestOccupancy}
+                onChange={e => handleChange('airbnbBestOccupancy', e.target.value)}
+                className="py-1"
+              />
+            </div>
+            <div>
+              <label htmlFor="airbnbWorstOccupancy" className="block text-xs font-medium text-gray-600 mb-1">
+                Worst Case Occ. (%)
+              </label>
+              <Input
+                id="airbnbWorstOccupancy"
+                type="number"
+                value={settings.airbnbWorstOccupancy}
+                onChange={e => handleChange('airbnbWorstOccupancy', e.target.value)}
+                className="py-1"
+              />
+            </div>
+        </div>
+      </div>
+
+      <hr className="my-4 border-gray-200"/>
+
+      <div>
         <h3 className="text-lg font-semibold mb-3 text-gray-800">Rental Assumptions (Whole Unit)</h3>
         <div className="space-y-3">
             {(settings.rentalAssumptions || []).map((assumption) => (

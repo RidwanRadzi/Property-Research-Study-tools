@@ -1,5 +1,5 @@
 import React, { memo, useState, useEffect } from 'react';
-import { Property, PropertyCalculations, ProjectionMode, RentalAssumption } from '../types';
+import { Property, PropertyCalculations, ProjectionMode, RentalAssumption, AirbnbCalculations, StandardCalculations } from '../types';
 import Input from './ui/Input';
 import Button from './ui/Button';
 import Select from './ui/Select';
@@ -21,7 +21,7 @@ type InputRow = {
 type ValueRow = {
   isInput: false;
   label: string;
-  value: (d: PropertyCalculations) => number;
+  value: (d: StandardCalculations) => number;
   subLabel?: string;
   highlight?: boolean;
   isNotCurrency?: boolean;
@@ -42,7 +42,26 @@ type DerivedInputRow = {
   subLabel?: string;
 };
 
+// New specific types for Airbnb table structure
+type AirbnbValueRow = {
+    isAirbnbValue: true;
+    label: string;
+    value: (d: AirbnbCalculations, scenario: 'currentCase' | 'bestCase' | 'worstCase') => number;
+    subLabel?: string;
+    highlight?: boolean;
+};
+type AirbnbCashflowRow = {
+    isAirbnbCashflow: true;
+    loanType: 'Nett' | '90%' | '70%' | 'LPPSA';
+    value: (d: AirbnbCalculations, scenario: 'currentCase' | 'bestCase' | 'worstCase') => number;
+}
+type AirbnbHeaderRow = {
+    isAirbnbHeader: true;
+    label: string;
+}
+
 type TableRow = SectionRow | InputRow | ValueRow | EditableSectionRow | DerivedInputRow;
+type AirbnbTableRow = SectionRow | InputRow | DerivedInputRow | ValueRow | AirbnbValueRow | AirbnbHeaderRow | AirbnbCashflowRow;
 
 
 interface ProjectionTableProps {
@@ -162,108 +181,277 @@ const PropertyHeader: React.FC<{ property: Property; onRemove: (id: number) => v
     </th>
 ));
 
-const getScenarioMetricRows = (selector: (d: PropertyCalculations) => any, cashflowLabel: string, includeCashback = true): TableRow[] => {
-    const rows: TableRow[] = [
-        { isInput: false, label: 'Total Commitment Monthly', value: (d: PropertyCalculations) => selector(d).totalCommitmentMonthly },
-        { isInput: false, label: 'Commitment', value: (d: PropertyCalculations) => selector(d).commitment, subLabel: 'Monthly Loan' },
-        { isInput: false, label: cashflowLabel, value: (d: PropertyCalculations) => selector(d).cashflow },
-        { isInput: false, label: `${cashflowLabel} excluding Principal`, value: (d: PropertyCalculations) => selector(d).cashflowExcludingPrincipal },
-    ];
-    if (includeCashback) {
-        rows.push({ isInput: false, label: 'Cashback', value: (d: PropertyCalculations) => selector(d).cashback, highlight: true });
-    }
-    return rows;
-}
-
-const ProjectionTable: React.FC<ProjectionTableProps> = ({
-  properties,
-  calculatedData,
-  onUpdateProperty,
-  onRemoveProperty,
-  projectionMode,
-  loanPercentage1,
-  setLoanPercentage1,
-  loanPercentage2,
-  setLoanPercentage2,
-  rentalAssumptions,
+const AirbnbProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMode'>> = ({
+    properties,
+    calculatedData,
+    onUpdateProperty,
+    onRemoveProperty,
+    loanPercentage1,
+    loanPercentage2,
 }) => {
+     // Type guard to ensure data is AirbnbCalculations
+    if (calculatedData.length > 0 && !calculatedData[0].isAirbnb) return null;
+    const airbnbData = calculatedData as AirbnbCalculations[];
 
-  const handleInputChange = (id: number, field: keyof Property, value: string) => {
-    onUpdateProperty(id, field, value ? parseFloat(value) : 0);
-  };
-  
-  const handleTextChange = (id: number, field: keyof Property, value: string) => {
-    onUpdateProperty(id, field, value);
-  };
-  
-  const incomeAndExpensesSection: TableRow[] = [
-    { isSection: true, label: "Income & Expenses (Monthly)" },
-    { isInput: false, label: 'Monthly Instalment at Nett', value: (d) => d.nettLoan.monthlyInstallment },
-  ];
+    const tableStructure: AirbnbTableRow[] = [
+        // Top section from image
+        { isSection: true, label: "Property Details & Pricing" },
+        { label: 'Type', isInput: true, field: 'type', inputType: 'text' },
+        { label: 'Bedrooms Type', isInput: true, field: 'bedroomsType', inputType: 'text' },
+        { label: 'Size (sqft)', isInput: true, field: 'size' },
+        { label: 'SPA Price (estimate)', isInput: true, field: 'spaPrice' },
+        { label: 'Valuation PSF', isInput: true, field: 'valuationPsf' },
+        { isDerivedInput: true, label: 'Price as per valuation', derivedField: 'priceAsPerValuation', value: (d) => d.priceAsPerValuation },
+        { label: 'Net PSF', isInput: true, field: 'netPsf' },
+        { isDerivedInput: true, label: 'Net Price', derivedField: 'netPrice', value: (d) => d.netPrice },
+        // Monthly installments moved to top
+        { isInput: false, label: `Monthly Instalment at ${loanPercentage1}%`, value: (d) => (d as AirbnbCalculations).monthlyInstallmentLoan1 },
+        { isInput: false, label: 'Monthly Instalment at Nett', value: (d) => (d as AirbnbCalculations).monthlyInstallmentNett },
+        { isInput: false, label: `Monthly Instalment at ${loanPercentage2}%`, value: (d) => (d as AirbnbCalculations).monthlyInstallmentLoan2 },
+        { isInput: false, label: 'Monthly Instalment at LPPSA', value: (d) => (d as AirbnbCalculations).monthlyInstallmentLppsa },
+        // Income & Expenses
+        { isSection: true, label: "Income & Expenses (Monthly)" },
+        { label: 'Rental/ night', isInput: true, field: 'airbnbRentalPerNight' },
+        { isInput: false, label: 'Total Comitment at Nett', value: (d) => (d as AirbnbCalculations).totalCommitmentAtNett },
+        { label: 'Maintenance + sinking', isInput: true, field: 'maintenanceSinking' },
+        { label: 'Wifi', isInput: true, field: 'wifi' },
+        
+        // Current Case
+        { isAirbnbHeader: true, label: 'Current Case' },
+        { isAirbnbValue: true, label: 'Airbnb Operator fee (25%)', value: (d, s) => d[s].operatorFee },
+        { isAirbnbValue: true, label: 'Total Income', value: (d, s) => d[s].totalIncome },
+        { isAirbnbCashflow: true, loanType: 'Nett', value: (d, s) => d[s].cashflowNett },
+        { isAirbnbCashflow: true, loanType: '90%', value: (d, s) => d[s].cashflowLoan1 },
+        { isAirbnbCashflow: true, loanType: '70%', value: (d, s) => d[s].cashflowLoan2 },
+        { isAirbnbCashflow: true, loanType: 'LPPSA', value: (d, s) => d[s].cashflowLppsa },
 
-  if (projectionMode === 'wholeUnit') {
-    incomeAndExpensesSection.push(
-      { label: 'Whole Unit Rental', isInput: true, field: 'wholeUnitRental' },
-      { label: 'Maintenance + sinking', isInput: true, field: 'maintenanceSinking' }
+        // Best Case
+        { isAirbnbHeader: true, label: 'Best Case' },
+        { isAirbnbValue: true, label: 'Airbnb Operator fee (25%)', value: (d, s) => d[s].operatorFee },
+        { isAirbnbValue: true, label: 'Total Income', value: (d, s) => d[s].totalIncome },
+        { isAirbnbCashflow: true, loanType: 'Nett', value: (d, s) => d[s].cashflowNett },
+        { isAirbnbCashflow: true, loanType: '90%', value: (d, s) => d[s].cashflowLoan1 },
+        { isAirbnbCashflow: true, loanType: '70%', value: (d, s) => d[s].cashflowLoan2 },
+        { isAirbnbCashflow: true, loanType: 'LPPSA', value: (d, s) => d[s].cashflowLppsa },
+
+        // Worst Case
+        { isAirbnbHeader: true, label: 'Worst Case' },
+        { isAirbnbValue: true, label: 'Airbnb Operator fee (25%)', value: (d, s) => d[s].operatorFee },
+        { isAirbnbValue: true, label: 'Total Income', value: (d, s) => d[s].totalIncome },
+        { isAirbnbCashflow: true, loanType: 'Nett', value: (d, s) => d[s].cashflowNett },
+        { isAirbnbCashflow: true, loanType: '90%', value: (d, s) => d[s].cashflowLoan1 },
+        { isAirbnbCashflow: true, loanType: '70%', value: (d, s) => d[s].cashflowLoan2 },
+        { isAirbnbCashflow: true, loanType: 'LPPSA', value: (d, s) => d[s].cashflowLppsa },
+    ];
+
+    return (
+        <tbody className="divide-y divide-gray-200">
+            {tableStructure.map((row, rowIndex) => {
+                 if ('isSection' in row) {
+                    return <tr key={`section-${rowIndex}`}><SectionHeader label={row.label} /></tr>;
+                 }
+                 if ('isDerivedInput' in row) {
+                    return (
+                      <tr key={`${row.label}-${rowIndex}`} className="hover:bg-gray-50">
+                        <RowLabel label={row.label} subLabel={row.subLabel} />
+                        {properties.map((p, pIndex) => (
+                          <td key={p.id} className="p-1.5 border-l border-gray-200 bg-yellow-50">
+                            <DerivedInputCell
+                              propertyId={p.id}
+                              propertySize={p.size}
+                              derivedField={row.derivedField}
+                              calculatedValue={row.value(calculatedData[pIndex])}
+                              onUpdateProperty={onUpdateProperty}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                 }
+                if ('isAirbnbHeader' in row) {
+                    return (
+                        <tr key={`airbnb-header-${row.label}`}>
+                            <th className="p-3 text-left font-bold text-lg bg-gray-100" colSpan={properties.length + 1}>{row.label}</th>
+                        </tr>
+                    )
+                }
+                
+                let scenario: 'currentCase' | 'bestCase' | 'worstCase' = 'currentCase';
+                if(rowIndex >= 20 && rowIndex <= 25) scenario = 'currentCase';
+                else if (rowIndex >= 26 && rowIndex <= 31) scenario = 'bestCase';
+                else if (rowIndex >= 32 && rowIndex <= 37) scenario = 'worstCase';
+
+                if ('isAirbnbValue' in row) {
+                    return (
+                        <tr key={`airbnb-${row.label}-${scenario}`}>
+                            <RowLabel label={row.label} />
+                            {airbnbData.map(d => (
+                                 <td key={d.netPrice + Math.random()} className={`p-1.5 border-l border-gray-200`}>
+                                     <div className="p-2 h-10 flex items-center">{renderValue(row.value(d, scenario))}</div>
+                                 </td>
+                            ))}
+                        </tr>
+                    )
+                }
+
+                if('isAirbnbCashflow' in row) {
+                    const label = row.loanType === '90%' ? `Net Cashflow at ${loanPercentage1}%` :
+                                  row.loanType === '70%' ? `Net Cashflow at ${loanPercentage2}%` :
+                                  `Net Cashflow at ${row.loanType}`;
+                    return (
+                        <tr key={`airbnb-cf-${row.loanType}-${scenario}`}>
+                            <RowLabel label={label} />
+                            {airbnbData.map(d => (
+                                 <td key={d.netPrice + Math.random()} className={`p-1.5 border-l border-gray-200`}>
+                                     <div className="p-2 h-10 flex items-center">{renderValue(row.value(d, scenario))}</div>
+                                 </td>
+                            ))}
+                        </tr>
+                    )
+                }
+
+                 // Default InputRow and ValueRow handler
+                 return (
+                    <tr key={`${(row as any).label}-${rowIndex}`} className="hover:bg-gray-50">
+                        <RowLabel label={(row as any).label} subLabel={(row as any).subLabel} />
+                        {properties.map((p, pIndex) => {
+                             if ('field' in row) { // Type guard for InputRow
+                                return (
+                                    <td key={p.id} className="p-1.5 border-l border-gray-200 bg-yellow-50">
+                                    {row.inputType === 'text' ?
+                                        <Input
+                                        type="text"
+                                        value={p[row.field] as string}
+                                        onChange={e => onUpdateProperty(p.id, row.field, e.target.value)}
+                                        className="bg-transparent focus:bg-white"
+                                        /> :
+                                        <Input
+                                        type="number"
+                                        value={p[row.field] as number}
+                                        onChange={e => onUpdateProperty(p.id, row.field, parseFloat(e.target.value) || 0)}
+                                        className="bg-transparent focus:bg-white"
+                                        />
+                                    }
+                                    </td>
+                                );
+                            } else if ('value' in row) { // Type guard for ValueRow
+                                // This block handles ValueRows in the top section
+                                const calc = calculatedData[pIndex];
+                                // This value must be cast because `row.value` expects `StandardCalculations`, but it works for both.
+                                const value = (row as any).value(calc); 
+                                return (
+                                    <td key={p.id} className={`p-1.5 border-l border-gray-200`}>
+                                    <div className="p-2 h-10 flex items-center">{renderValue(value, !row.isNotCurrency)}</div>
+                                    </td>
+                                );
+                            }
+                            return <td key={p.id}></td>
+                        })}
+                    </tr>
+                )
+            })}
+        </tbody>
     );
-  } else { // coLiving
+};
+
+
+const StandardProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMode'>> = ({
+    properties,
+    calculatedData,
+    onUpdateProperty,
+    projectionMode,
+    loanPercentage1,
+    setLoanPercentage1,
+    loanPercentage2,
+    setLoanPercentage2,
+    rentalAssumptions,
+}) => {
+    // Type guard
+    if (calculatedData.length > 0 && calculatedData[0].isAirbnb) return null;
+    const standardData = calculatedData as StandardCalculations[];
+    
+    const handleInputChange = (id: number, field: keyof Property, value: string) => {
+      onUpdateProperty(id, field, value ? parseFloat(value) : 0);
+    };
+    
+    const handleTextChange = (id: number, field: keyof Property, value: string) => {
+      onUpdateProperty(id, field, value);
+    };
+  
+    const incomeAndExpensesSection: TableRow[] = [
+      { isSection: true, label: "Income & Expenses (Monthly)" },
+      { isInput: false, label: 'Monthly Instalment at Nett', value: (d) => d.nettLoan.monthlyInstallment },
+    ];
+
+    if (projectionMode === 'wholeUnit') {
+      incomeAndExpensesSection.push(
+        { label: 'Whole Unit Rental', isInput: true, field: 'wholeUnitRental' },
+        { label: 'Maintenance + sinking', isInput: true, field: 'maintenanceSinking' }
+      );
+    } else { // coLiving or selfManage
+      const rentalLabel = projectionMode === 'selfManage' ? 'Rental' : 'Co-living Rental';
+      incomeAndExpensesSection.push(
+        { label: rentalLabel, isInput: true, field: 'coLivingRental' },
+        { label: 'Maintenance + sinking', isInput: true, field: 'maintenanceSinking' },
+      );
+      if (projectionMode === 'coLiving') {
+          incomeAndExpensesSection.push(
+              { isInput: false, label: 'Co-liv management fee', value: (d) => d.managementFee }
+          );
+      }
+      incomeAndExpensesSection.push(
+        { label: 'Wifi', isInput: true, field: 'wifi' }
+      );
+    }
+
     incomeAndExpensesSection.push(
-      { label: 'Co-living Rental', isInput: true, field: 'coLivingRental' },
-      { label: 'Maintenance + sinking', isInput: true, field: 'maintenanceSinking' },
-      { isInput: false, label: 'Co-liv management fee', value: (d) => d.managementFee },
-      { label: 'Cleaning', isInput: true, field: 'cleaning' },
-      { label: 'Wifi', isInput: true, field: 'wifi' }
+        { isInput: false, label: 'Total Commitment at Nett', value: (d) => d.normalMortgage.totalCommitmentMonthly }
     );
-  }
-
-  incomeAndExpensesSection.push(
-      { isInput: false, label: 'Total Commitment at Nett', value: (d) => d.normalMortgage.totalCommitmentMonthly }
-  );
-
-  const tableStructure: TableRow[] = [
-    { isSection: true, label: "Property Details" },
-    { label: 'Type', isInput: true, field: 'type', inputType: 'text' },
-    { label: 'Bedrooms Type', isInput: true, field: 'bedroomsType', inputType: 'text' },
-    { label: 'Size (sqft)', isInput: true, field: 'size' },
     
-    { isSection: true, label: "Pricing & Valuation" },
-    { label: 'SPA Price (estimate)', isInput: true, field: 'spaPrice' },
-    { label: 'Valuation PSF', isInput: true, field: 'valuationPsf', subLabel: '**ask acquisition' },
-    { isDerivedInput: true, label: 'Price as per valuation', derivedField: 'priceAsPerValuation', value: (d) => d.priceAsPerValuation },
-    { label: 'Net PSF', isInput: true, field: 'netPsf' },
-    { isDerivedInput: true, label: 'Net Price', derivedField: 'netPrice', value: (d) => d.netPrice },
+    const getScenarioMetricRows = (selector: (d: StandardCalculations) => any, cashflowLabel: string, includeCashback = true): TableRow[] => {
+        const rows: TableRow[] = [
+            { isInput: false, label: 'Total Commitment Monthly', value: (d: StandardCalculations) => selector(d).totalCommitmentMonthly },
+            { isInput: false, label: 'Commitment', value: (d: StandardCalculations) => selector(d).commitment, subLabel: 'Monthly Loan' },
+            { isInput: false, label: cashflowLabel, value: (d: StandardCalculations) => selector(d).cashflow },
+            { isInput: false, label: `${cashflowLabel} excluding Principal`, value: (d: StandardCalculations) => selector(d).cashflowExcludingPrincipal },
+        ];
+        if (includeCashback) {
+            rows.push({ isInput: false, label: 'Cashback', value: (d: StandardCalculations) => selector(d).cashback, highlight: true });
+        }
+        return rows;
+    }
 
-    ...incomeAndExpensesSection,
-    
-    // Normal Mortgage Section
-    { isSection: true, label: "Normal Mortgage nett" },
-    { isInput: false, label: 'Commitment at Net', value: (d) => d.normalMortgage.commitment },
-    { isInput: false, label: 'Net Cashflow (no cashback)', value: (d) => d.normalMortgage.cashflow },
-    { isInput: false, label: 'Net Cashflow excluding Principal', value: (d) => d.normalMortgage.cashflowExcludingPrincipal },
-    
-    // Editable Scenario 1
-    { isEditableSection: true, label: 'Loan at valuation', value: loanPercentage1, onChange: setLoanPercentage1 },
-    ...getScenarioMetricRows((d) => d.loanScenario1, `Cashflow (${loanPercentage1}% loan)`),
+    const tableStructure: TableRow[] = [
+      { isSection: true, label: "Property Details" },
+      { label: 'Type', isInput: true, field: 'type', inputType: 'text' },
+      { label: 'Bedrooms Type', isInput: true, field: 'bedroomsType', inputType: 'text' },
+      { label: 'Size (sqft)', isInput: true, field: 'size' },
+      
+      { isSection: true, label: "Pricing & Valuation" },
+      { label: 'SPA Price (estimate)', isInput: true, field: 'spaPrice' },
+      { label: 'Valuation PSF', isInput: true, field: 'valuationPsf', subLabel: '**ask acquisition' },
+      { isDerivedInput: true, label: 'Price as per valuation', derivedField: 'priceAsPerValuation', value: (d) => d.priceAsPerValuation },
+      { label: 'Net PSF', isInput: true, field: 'netPsf' },
+      { isDerivedInput: true, label: 'Net Price', derivedField: 'netPrice', value: (d) => d.netPrice },
 
-    // Editable Scenario 2
-    { isEditableSection: true, label: 'Loan at valuation', value: loanPercentage2, onChange: setLoanPercentage2 },
-    ...getScenarioMetricRows((d) => d.loanScenario2, `Cashflow (${loanPercentage2}% loan)`),
+      ...incomeAndExpensesSection,
+      
+      { isSection: true, label: "Normal Mortgage nett" },
+      { isInput: false, label: 'Commitment at Net', value: (d) => d.normalMortgage.commitment },
+      { isInput: false, label: 'Net Cashflow (no cashback)', value: (d) => d.normalMortgage.cashflow },
+      { isInput: false, label: 'Net Cashflow excluding Principal', value: (d) => d.normalMortgage.cashflowExcludingPrincipal },
+      
+      { isEditableSection: true, label: 'Loan at valuation', value: loanPercentage1, onChange: setLoanPercentage1 },
+      ...getScenarioMetricRows((d) => d.loanScenario1, `Cashflow (${loanPercentage1}% loan)`),
 
-    // LPPSA
-    { isSection: true, label: "LPPSA at SPA" },
-    ...getScenarioMetricRows((d) => d.lppsa, 'Cashflow (LPPSA loan)'),
-  ];
+      { isEditableSection: true, label: 'Loan at valuation', value: loanPercentage2, onChange: setLoanPercentage2 },
+      ...getScenarioMetricRows((d) => d.loanScenario2, `Cashflow (${loanPercentage2}% loan)`),
 
-  return (
-    <table className="min-w-full text-sm text-left border-collapse">
-      <thead className="sticky top-0 z-20">
-        <tr>
-          <th className="p-3 text-left font-semibold text-gray-700 sticky top-0 left-0 z-30 bg-white min-w-[250px]">Metric</th>
-          {properties.map(p => (
-            <PropertyHeader key={p.id} property={p} onRemove={onRemoveProperty} />
-          ))}
-        </tr>
-      </thead>
+      { isSection: true, label: "LPPSA at SPA" },
+      ...getScenarioMetricRows((d) => d.lppsa, 'Cashflow (LPPSA loan)'),
+    ];
+
+    return (
       <tbody className="divide-y divide-gray-200">
         {tableStructure.map((row, rowIndex) => {
           if ('isSection' in row) {
@@ -308,11 +496,10 @@ const ProjectionTable: React.FC<ProjectionTableProps> = ({
               </tr>
             );
           }
-
-          // By handling the other cases above, TypeScript infers `row` must be of type `InputRow` or `ValueRow` below.
+          
           return (
-            <tr key={`${row.label}-${rowIndex}`} className="hover:bg-gray-50">
-              <RowLabel label={row.label} subLabel={row.subLabel} />
+            <tr key={`${(row as any).label}-${rowIndex}`} className="hover:bg-gray-50">
+              <RowLabel label={(row as any).label} subLabel={(row as any).subLabel} />
               {properties.map((p, pIndex) => {
                 if ('field' in row) { // Type guard for InputRow
                     if (row.field === 'bedroomsType') {
@@ -360,7 +547,7 @@ const ProjectionTable: React.FC<ProjectionTableProps> = ({
                   return (
                     <td key={p.id} className={`p-1.5 border-l border-gray-200 ${row.highlight ? 'bg-red-50' : ''}`}>
                       <div className="p-2 h-10 flex items-center">
-                        {renderValue(row.value(calculatedData[pIndex]), !row.isNotCurrency)}
+                        {renderValue(row.value(standardData[pIndex]), !row.isNotCurrency)}
                       </div>
                     </td>
                   );
@@ -370,6 +557,25 @@ const ProjectionTable: React.FC<ProjectionTableProps> = ({
           );
         })}
       </tbody>
+    );
+}
+
+const ProjectionTable: React.FC<ProjectionTableProps> = (props) => {
+  return (
+    <table className="min-w-full text-sm text-left border-collapse">
+      <thead className="sticky top-0 z-20">
+        <tr>
+          <th className="p-3 text-left font-semibold text-gray-700 sticky top-0 left-0 z-30 bg-white min-w-[250px]">Metric</th>
+          {props.properties.map(p => (
+            <PropertyHeader key={p.id} property={p} onRemove={props.onRemoveProperty} />
+          ))}
+        </tr>
+      </thead>
+      {props.projectionMode === 'airbnb' ? (
+        <AirbnbProjectionBody {...props} />
+      ) : (
+        <StandardProjectionBody {...props} />
+      )}
     </table>
   );
 };

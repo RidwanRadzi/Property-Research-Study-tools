@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { RoomRentalListing } from '../types';
 import { findRoomRentals } from '../services/geminiService';
@@ -5,11 +6,9 @@ import Button from './ui/Button';
 import Input from './ui/Input';
 import Spinner from './ui/Spinner';
 
-interface RoomRentalPageProps {
-  onNavigateBack: () => void;
-}
+interface RoomRentalPageProps {}
 
-const RoomRentalPage: React.FC<RoomRentalPageProps> = ({ onNavigateBack }) => {
+const RoomRentalPage: React.FC<RoomRentalPageProps> = () => {
   const [area, setArea] = useState('Cyberjaya');
   const [listings, setListings] = useState<RoomRentalListing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -162,14 +161,14 @@ const RoomRentalPage: React.FC<RoomRentalPageProps> = ({ onNavigateBack }) => {
   };
 
   return (
-    <>
+    <div className="-mt-8">
       <header className="text-center mb-10 w-full">
         <h1 className="text-4xl font-bold text-[#700d1d] tracking-tight">Room Rental Reference</h1>
         <p className="text-gray-600 mt-2">Find room rental prices for co-living analysis from sources like ibilik.my and mudah.my.</p>
       </header>
 
       <main className="w-full max-w-7xl mx-auto">
-        <form onSubmit={handleSearch} className="bg-gray-50 p-6 rounded-lg shadow-lg border border-gray-200 flex flex-col sm:flex-row items-end gap-4">
+        <form onSubmit={handleSearch} className="bg-white p-6 rounded-lg shadow-lg border border-gray-200 flex flex-col sm:flex-row items-end gap-4">
           <div className="flex-grow w-full">
             <label htmlFor="area" className="block text-sm font-medium text-gray-700 mb-1">Area / Location</label>
             <Input id="area" type="text" value={area} onChange={e => setArea(e.target.value)} placeholder="e.g., Cyberjaya" required />
@@ -181,16 +180,7 @@ const RoomRentalPage: React.FC<RoomRentalPageProps> = ({ onNavigateBack }) => {
 
         {renderContent()}
       </main>
-      
-       <div className="mt-12 text-center">
-            <Button onClick={onNavigateBack} variant="primary" className="bg-gray-600 hover:bg-gray-500 focus:ring-gray-500">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-                Back to Cash Flow Projection
-            </Button>
-        </div>
-    </>
+    </div>
   );
 };
 

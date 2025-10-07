@@ -15,6 +15,8 @@ interface HomePageProps {
   savedSessions: SavedSession[];
   onLoadSession: (id: number) => void;
   onDeleteSession: (id: number) => void;
+  comparables: ComparableProperty[];
+  setComparables: React.Dispatch<React.SetStateAction<ComparableProperty[]>>;
 }
 
 const HomePage: React.FC<HomePageProps> = ({ 
@@ -26,10 +28,11 @@ const HomePage: React.FC<HomePageProps> = ({
   savedSessions,
   onLoadSession,
   onDeleteSession,
+  comparables,
+  setComparables,
 }) => {
   const [residenceType, setResidenceType] = useState('Serviced Apartment/Condominium');
   const [radius, setRadius] = useState('3');
-  const [comparables, setComparables] = useState<ComparableProperty[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -273,10 +276,19 @@ const HomePage: React.FC<HomePageProps> = ({
           </Button>
         </form>
 
+        <div className="mt-4 text-center text-sm text-gray-600 flex items-center justify-center gap-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
+          <span className="text-left">
+            <strong>Pro Tip:</strong> The AI prioritizes the <strong>nearest</strong> properties within your radius and will strictly match the selected <strong>residence type</strong>.
+          </span>
+        </div>
+
         {error && <div className="mt-6 text-center text-red-600 bg-red-50 p-4 rounded-md">{error}</div>}
         
         <form onSubmit={handleSpecificSearch} className="mt-6 w-full max-w-7xl bg-gray-50 p-4 rounded-lg shadow-lg border border-gray-200">
-            <h3 className="font-semibold text-gray-800 text-lg mb-3">Add a Specific Property</h3>
+            <h3 className="font-semibold text-gray-800 text-lg mb-3">Add a Specific Comparable Property</h3>
             <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
                 <div className="flex-grow w-full">
                     <label htmlFor="specific-property-name" className="block text-sm font-medium text-gray-700 mb-1">Property Name</label>

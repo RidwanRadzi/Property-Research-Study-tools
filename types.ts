@@ -1,5 +1,4 @@
-
-export type ProjectionMode = 'wholeUnit' | 'coLiving';
+export type ProjectionMode = 'wholeUnit' | 'coLiving' | 'selfManage' | 'airbnb';
 
 export interface Property {
   id: number;
@@ -11,8 +10,8 @@ export interface Property {
   netPsf: number;
   wholeUnitRental: number;
   coLivingRental: number;
+  airbnbRentalPerNight: number; // New field for Airbnb
   maintenanceSinking: number;
-  cleaning: number;
   wifi: number;
 }
 
@@ -48,18 +47,24 @@ export interface GlobalSettings {
   maintenanceFeePsf: number;
   lppsaInterestRate: number;
   rentalAssumptions: RentalAssumption[];
+  // New fields for Airbnb
+  airbnbOperatorFee: number;
+  airbnbCurrentOccupancy: number;
+  airbnbBestOccupancy: number;
+  airbnbWorstOccupancy: number;
 }
 
 export interface LoanScenario {
   totalCommitmentMonthly: number;
   commitment: number;
-
   cashflow: number;
   cashflowExcludingPrincipal: number;
   cashback: number;
 }
 
-export interface PropertyCalculations {
+// Renamed for clarity, represents the standard calculation structure
+export interface StandardCalculations {
+  isAirbnb: false;
   priceAsPerValuation: number;
   netPrice: number;
   managementFee: number;
@@ -73,6 +78,37 @@ export interface PropertyCalculations {
   loanScenario2: LoanScenario;
   lppsa: LoanScenario;
 }
+
+// New types for Airbnb projection
+export interface AirbnbScenarioCalculations {
+    totalIncome: number;
+    operatorFee: number;
+    cashflowNett: number;
+    cashflowLoan1: number;
+    cashflowLoan2: number;
+    cashflowLppsa: number;
+}
+
+export interface AirbnbCalculations {
+    isAirbnb: true;
+    priceAsPerValuation: number;
+    netPrice: number;
+    // Pre-calculated monthly installments for display
+    monthlyInstallmentNett: number;
+    monthlyInstallmentLoan1: number;
+    monthlyInstallmentLoan2: number;
+    monthlyInstallmentLppsa: number;
+    totalCommitmentAtNett: number; // As per image
+    // Three scenarios
+    currentCase: AirbnbScenarioCalculations;
+    bestCase: AirbnbScenarioCalculations;
+    worstCase: AirbnbScenarioCalculations;
+}
+
+
+// Discriminated union for type safety
+export type PropertyCalculations = StandardCalculations | AirbnbCalculations;
+
 
 export interface LayoutRentalSummary {
   layoutType: string;
@@ -126,7 +162,16 @@ export interface Floorplan {
 export interface UnitListing {
   name: string;
   headers: string[];
-  rows: { [key: string]: string | number }[];
+  // FIX: Changed to Record<string, any>[] for better type safety than any[]
+  rows: Record<string, any>[];
+}
+
+// New type for AI analysis result
+export interface UnitListingAnalysisResult {
+  typeKey: string;
+  sizeKey: string;
+  priceKey: string;
+  unitNoKey: string;
 }
 
 export interface RoomRentalListing {
@@ -174,6 +219,81 @@ export interface AreaAnalysisData {
   news: NewsArticle[];
 }
 
+// New types for Whole Unit Rental Page
+export interface WholeUnitRentalRawData {
+  [key: string]: string | number;
+}
+
+export interface BedroomSummary {
+  bedroomType: string;
+  count: number;
+  minRent: number;
+  maxRent: number;
+  minPsf: number;
+  maxPsf: number;
+}
+
+export interface WholeUnitDevelopmentSummary {
+  developmentName: string;
+  bedrooms: BedroomSummary[];
+}
+
+export interface WholeUnitRentalData {
+  fileName: string;
+  headers: string[];
+  rawData: WholeUnitRentalRawData[];
+  summary: WholeUnitDevelopmentSummary[];
+}
+
+// New types for Asking Price Page
+export interface AskingPriceRawData {
+  [key: string]: string | number;
+}
+
+export interface AskingPriceBedroomSummary {
+  bedroomType: string;
+  count: number;
+  minPrice: number;
+  maxPrice: number;
+  minPsf: number;
+  maxPsf: number;
+}
+
+export interface AskingPriceDevelopmentSummary {
+  developmentName: string;
+  bedrooms: AskingPriceBedroomSummary[];
+}
+
+export interface AskingPriceData {
+  fileName: string;
+  headers: string[];
+  rawData: AskingPriceRawData[];
+  summary: AskingPriceDevelopmentSummary[];
+}
+
+// New types for Airbnb Scraper Page
+export interface AirbnbListing {
+  id: string;
+  title: string;
+  url: string;
+  pricePerNight: number;
+  rating: number;
+  numberOfReviews: number;
+  propertyType: string;
+  guests: number;
+  bedrooms: number;
+  beds: number;
+  baths: number;
+}
+
+export interface AirbnbScraperData {
+  area: string;
+  city: string;
+  listings: AirbnbListing[];
+  averagePricePerNight?: number;
+  estimatedOccupancyRate?: number;
+}
+
 export interface SavedSession {
   id: number; // timestamp
   name: string; // e.g., "Vybe - Cyberjaya"
@@ -186,6 +306,9 @@ export interface SavedSession {
   floorplans: Floorplan[];
   unitListing: UnitListing | null;
   transactionSummaries: TransactionSummary[];
+  wholeUnitRentalData: WholeUnitRentalData | null;
+  askingPriceData: AskingPriceData | null;
+  airbnbScraperData: AirbnbScraperData | null;
   // State from ProjectionPage.tsx
   globalSettings: GlobalSettings;
   projectionMode: ProjectionMode;

@@ -6,13 +6,12 @@ import Button from './ui/Button';
 import Spinner from './ui/Spinner';
 
 interface AreaAnalysisPageProps {
-    onNavigateBack: () => void;
-    onNavigateToUnitListings: () => void;
+    onNavigateToWholeUnitRentals: () => void;
     area: string;
     propertyName: string;
 }
 
-const AreaAnalysisPage: React.FC<AreaAnalysisPageProps> = ({ onNavigateBack, onNavigateToUnitListings, area, propertyName }) => {
+const AreaAnalysisPage: React.FC<AreaAnalysisPageProps> = ({ onNavigateToWholeUnitRentals, area, propertyName }) => {
     const [analysisData, setAnalysisData] = useState<AreaAnalysisData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -165,7 +164,7 @@ const AreaAnalysisPage: React.FC<AreaAnalysisPageProps> = ({ onNavigateBack, onN
     }
 
     return (
-        <div className="flex flex-col items-center w-full">
+        <div className="flex flex-col items-center w-full -mt-8">
             <header className="text-center mb-10 w-full">
                 <h1 className="text-5xl font-bold text-[#700d1d] tracking-tight">
                     Area Analysis
@@ -180,12 +179,8 @@ const AreaAnalysisPage: React.FC<AreaAnalysisPageProps> = ({ onNavigateBack, onN
             </main>
 
             <div className="mt-12 w-full max-w-7xl flex justify-center items-center gap-6">
-                <Button onClick={onNavigateBack} variant="primary" className="bg-gray-600 hover:bg-gray-500 focus:ring-gray-500">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                    Back to Transaction
-                </Button>
-                <Button onClick={onNavigateToUnitListings} size="md" disabled={isLoading || !!error}>
-                    Proceed to Unit Listing
+                <Button onClick={onNavigateToWholeUnitRentals} size="md" disabled={isLoading || !!error}>
+                    Next: Whole Unit Rental
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                 </Button>
             </div>

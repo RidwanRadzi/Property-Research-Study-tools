@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Floorplan } from '../types';
 import Button from './ui/Button';
@@ -6,16 +7,16 @@ interface FloorplanPageProps {
   floorplans: Floorplan[];
   onAddFloorplan: (floorplan: Floorplan) => void;
   onRemoveFloorplan: (id: string) => void;
-  onNavigateBack: () => void;
 }
 
-const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorplan, onRemoveFloorplan, onNavigateBack }) => {
+const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorplan, onRemoveFloorplan }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFloorplan, setSelectedFloorplan] = useState<Floorplan | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
-      Array.from(event.target.files).forEach(file => {
+      // FIX: Use spread syntax to create a properly typed File[] array, ensuring 'file' is inferred correctly.
+      for (const file of [...event.target.files]) {
         if (file.type.startsWith('image/')) {
           const reader = new FileReader();
           reader.onload = (e) => {
@@ -27,7 +28,7 @@ const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorpla
           };
           reader.readAsDataURL(file);
         }
-      });
+      }
       // Reset the input value to allow uploading the same file again
       event.target.value = '';
     }
@@ -67,7 +68,7 @@ const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorpla
   }
 
   return (
-    <>
+    <div className="-mt-8">
       <header className="mb-8 flex justify-between items-center">
         <div className="text-center flex-grow">
             <h1 className="text-4xl font-bold text-[#700d1d] tracking-tight">Floor Plan Reference</h1>
@@ -76,7 +77,7 @@ const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorpla
       </header>
       
       <main>
-        <div className="bg-gray-50 p-6 rounded-lg shadow-lg border border-gray-200 text-center mb-8">
+        <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-200 text-center mb-8">
             <h2 className="text-xl font-semibold text-gray-800 mb-2">Add New Floor Plans</h2>
             <p className="text-gray-600 mb-4">You can paste an image (Ctrl+V) or upload PNG and JPG files from your computer.</p>
             <Button onClick={triggerFileSelect}>
@@ -135,15 +136,6 @@ const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorpla
                 <p className="mt-1 text-sm text-gray-500">Your uploaded and pasted floor plans will appear here.</p>
             </div>
         )}
-        
-        <div className="mt-12 text-center">
-            <Button onClick={onNavigateBack} variant="primary" className="bg-gray-600 hover:bg-gray-500 focus:ring-gray-500">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-                Back to Cash Flow Projection
-            </Button>
-        </div>
       </main>
 
       {selectedFloorplan && (
@@ -171,7 +163,7 @@ const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorpla
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };
 

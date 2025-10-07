@@ -1,40 +1,87 @@
 
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Transaction, TransactionSummary } from '../types';
+import { Transaction, TransactionSummary, ComparableProperty } from '../types';
 import Button from './ui/Button';
 import Spinner from './ui/Spinner';
 
 interface TransactionFilterPageProps {
-    onNavigateBack: () => void;
     onNavigateToAreaAnalysis: () => void;
     onSetSummaries: (summaries: Omit<TransactionSummary, 'id'>[]) => void;
+    comparables: ComparableProperty[];
 }
 
-const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigateBack, onNavigateToAreaAnalysis, onSetSummaries }) => {
+const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigateToAreaAnalysis, onSetSummaries, comparables }) => {
     const [filteredData, setFilteredData] = useState<Transaction[]>([]);
     const [headers, setHeaders] = useState<string[]>([]);
     const [fileName, setFileName] = useState<string | null>(null);
     const [processing, setProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [identifiedKeys, setIdentifiedKeys] = useState<{ devKey: string; priceKey: string } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const calculateSummaries = (data: Transaction[]) => {
-        const headers = data.length > 0 ? Object.keys(data[0]) : [];
-        
-        if (headers.length < 5) {
-            setError("The uploaded file must have at least 5 columns. 'Development Name' should be the 3rd column and 'Price (RM)' should be the 5th.");
-            onSetSummaries([]);
+    const calculateSummaries = (data: Transaction[], fileHeaders: string[]) => {
+        setError(null);
+        setIdentifiedKeys(null);
+        onSetSummaries([]);
+
+        // Helper to find a header based on keywords
+        const findKey = (keywords: string[]): string | undefined => {
+            for (const keyword of keywords) {
+                const foundHeader = fileHeaders.find(h => h.toLowerCase().trim().includes(keyword));
+                if (foundHeader) return foundHeader;
+            }
+            return undefined;
+        };
+
+        // --- Find Price Key ---
+        const priceKey = findKey(['price (rm)', 'price']);
+        if (!priceKey) {
+            setError("Could not automatically identify the 'Price (RM)' column. Please check the Excel file header.");
             return;
         }
 
-        const devKey = headers[2]; // 3rd column for development name
-        const priceKey = headers[4]; // 5th column for Price (RM)
+        // --- Find Development Key ---
+        let devKey = findKey(['development', 'project', 'property']);
+
+        // If not found by keyword, try matching with comparable property names
+        if (!devKey && comparables.length > 0 && data.length > 0) {
+            const comparableNames = new Set(comparables.map(c => String(c.name).toLowerCase().trim()));
+            if (comparableNames.size > 0) {
+                let bestMatch = { header: '', score: 0 };
+                // Find the column that has the most matches with the comparable property names
+                for (const header of fileHeaders) {
+                    let currentScore = 0;
+                    // Check a sample of rows for efficiency
+                    const sampleSize = Math.min(50, data.length);
+                    for (let i = 0; i < sampleSize; i++) {
+                        const cellValue = String(data[i][header] || '').toLowerCase().trim();
+                        if (comparableNames.has(cellValue)) {
+                            currentScore++;
+                        }
+                    }
+                    if (currentScore > bestMatch.score) {
+                        bestMatch = { header, score: currentScore };
+                    }
+                }
+                // Use a threshold to confirm the match (e.g., at least 2 matches)
+                if (bestMatch.score > 1) {
+                    devKey = bestMatch.header;
+                }
+            }
+        }
+
+        if (!devKey) {
+            setError("Could not automatically identify the 'Development' column. Please check the Excel file header or ensure comparables are loaded from the home page.");
+            return;
+        }
+        
+        setIdentifiedKeys({ devKey, priceKey });
 
         const groupedByDev: { [key: string]: number[] } = {};
         data.forEach(row => {
-            const devName = row[devKey];
-            const price = parseFloat(String(row[priceKey]).replace(/,/g, ''));
+            const devName = row[devKey!];
+            const price = parseFloat(String(row[priceKey!]).replace(/,/g, ''));
             if (devName && !isNaN(price)) {
                 if (!groupedByDev[devName]) {
                     groupedByDev[devName] = [];
@@ -73,6 +120,7 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
         setFilteredData([]);
         setHeaders([]);
         setFileName(null);
+        setIdentifiedKeys(null);
 
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -112,9 +160,10 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
                     setError("No valid individual transactions found after filtering. All rows were removed.");
                     onSetSummaries([]);
                 } else {
-                    setHeaders(Object.keys(cleanedData[0]));
+                    const fileHeaders = Object.keys(cleanedData[0]);
+                    setHeaders(fileHeaders);
                     setFilteredData(cleanedData);
-                    calculateSummaries(cleanedData);
+                    calculateSummaries(cleanedData, fileHeaders);
                 }
                 
                 setFileName(file.name);
@@ -165,16 +214,16 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
     );
 
     return (
-        <div className="flex flex-col items-center w-full">
+        <div className="flex flex-col items-center w-full -mt-8">
             <header className="text-center mb-10 w-full">
                 <h1 className="text-5xl font-bold text-[#700d1d] tracking-tight">Transaction</h1>
                 <p className="text-gray-600 mt-4 text-lg max-w-3xl mx-auto">
-                    Upload an Excel file. The data will be automatically filtered to remove rows with blank or corporate "Seller" and "Buyer" names.
+                    Upload an Excel file. The app will automatically find the development and price columns, filter out corporate sales, and generate a summary.
                 </p>
             </header>
 
             <main className="w-full max-w-7xl">
-                <div className="bg-gray-50 p-6 rounded-lg shadow-lg border border-gray-200">
+                <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
                     <div className="text-center">
                          <h2 className="text-xl font-semibold text-gray-800 mb-2">Upload Transaction Data</h2>
                          <p className="text-gray-600 mb-4">Select an XLS or XLSX file to begin.</p>
@@ -192,6 +241,14 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
                             accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                          />
                     </div>
+
+                    {identifiedKeys && (
+                        <div className="mt-4 text-center text-sm text-green-800 bg-green-50 p-3 rounded-md">
+                            Successfully identified columns: 
+                            <strong> Development</strong> as '{identifiedKeys.devKey}' and 
+                            <strong> Price</strong> as '{identifiedKeys.priceKey}'.
+                        </div>
+                    )}
                     
                     {error && <div className="mt-4 text-center text-red-600 bg-red-50 p-3 rounded-md">{error}</div>}
 
@@ -216,12 +273,8 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
             </main>
 
             <div className="mt-12 w-full max-w-7xl flex justify-center items-center gap-6">
-                <Button onClick={onNavigateBack} variant="primary" className="bg-gray-600 hover:bg-gray-500 focus:ring-gray-500">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                    Back to Market Summary
-                </Button>
                 <Button onClick={onNavigateToAreaAnalysis} size="md">
-                    Proceed to Area Analysis
+                    Next: Area Analysis
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                 </Button>
             </div>

@@ -1,5 +1,4 @@
-
-import { Property, GlobalSettings, PropertyCalculations, LoanScenario, ProjectionMode } from '../types';
+import { Property, GlobalSettings, PropertyCalculations, LoanScenario, ProjectionMode, AirbnbCalculations, StandardCalculations, AirbnbScenarioCalculations } from '../types';
 
 const calculateMonthlyInstallment = (principal: number, annualRate: number, years: number): { monthlyPayment: number; firstMonthPrincipal: number; firstMonthInterest: number } => {
   if (principal <= 0 || annualRate < 0 || years <= 0) {
@@ -29,11 +28,80 @@ export const calculateAllMetrics = (property: Property, settings: GlobalSettings
   const priceAsPerValuation = property.size * property.valuationPsf;
   const netPrice = property.size * property.netPsf;
   
-  const isCoLiving = projectionMode === 'coLiving';
+  // Calculate all possible loan installments first
+  const nettLoanInstallment = calculateMonthlyInstallment(netPrice, settings.interestRate, settings.loanTenure).monthlyPayment;
+  const loan1Installment = calculateMonthlyInstallment(priceAsPerValuation * (loanPercentage1 / 100), settings.interestRate, settings.loanTenure).monthlyPayment;
+  const loan2Installment = calculateMonthlyInstallment(priceAsPerValuation * (loanPercentage2 / 100), settings.interestRate, settings.loanTenure).monthlyPayment;
+  const LPPSA_LOAN_CAP = 750000;
+  const lppsaLoanAmount = Math.min(property.spaPrice, LPPSA_LOAN_CAP);
+  const lppsaInstallment = calculateMonthlyInstallment(lppsaLoanAmount, settings.lppsaInterestRate, settings.loanTenure).monthlyPayment;
 
-  const rentalIncome = isCoLiving ? property.coLivingRental : property.wholeUnitRental;
-  const managementFee = isCoLiving ? rentalIncome * (settings.managementFeePercent / 100) : 0;
-  const otherExpenses = isCoLiving ? property.cleaning + property.wifi : 0;
+  if (projectionMode === 'airbnb') {
+    const calculateScenario = (occupancyPercent: number): AirbnbScenarioCalculations => {
+        const rentalPerNight = property.airbnbRentalPerNight;
+        const daysInMonth = 30;
+        const occupancyRate = occupancyPercent / 100;
+
+        const totalIncome = rentalPerNight * daysInMonth * occupancyRate;
+        const operatorFee = totalIncome * (settings.airbnbOperatorFee / 100);
+        
+        const monthlyExpenses = property.maintenanceSinking + property.wifi;
+
+        const calculateCashflow = (monthlyInstallment: number) => {
+            return totalIncome - monthlyInstallment - monthlyExpenses - operatorFee;
+        };
+        
+        return {
+            totalIncome,
+            operatorFee,
+            cashflowNett: calculateCashflow(nettLoanInstallment),
+            cashflowLoan1: calculateCashflow(loan1Installment),
+            cashflowLoan2: calculateCashflow(loan2Installment),
+            cashflowLppsa: calculateCashflow(lppsaInstallment),
+        };
+    };
+
+    const totalCommitmentAtNett = nettLoanInstallment + property.maintenanceSinking + property.wifi;
+
+    const airbnbCalculations: AirbnbCalculations = {
+        isAirbnb: true,
+        priceAsPerValuation,
+        netPrice,
+        monthlyInstallmentNett: nettLoanInstallment,
+        monthlyInstallmentLoan1: loan1Installment,
+        monthlyInstallmentLoan2: loan2Installment,
+        monthlyInstallmentLppsa: lppsaInstallment,
+        totalCommitmentAtNett,
+        currentCase: calculateScenario(settings.airbnbCurrentOccupancy),
+        bestCase: calculateScenario(settings.airbnbBestOccupancy),
+        worstCase: calculateScenario(settings.airbnbWorstOccupancy),
+    };
+    return airbnbCalculations;
+  }
+
+  // --- Standard Calculations (Whole Unit, Co-Living, Self Manage) ---
+  let rentalIncome: number;
+  let managementFee: number;
+  let otherExpenses: number;
+
+  switch (projectionMode) {
+    case 'coLiving':
+      rentalIncome = property.coLivingRental;
+      managementFee = rentalIncome * (settings.managementFeePercent / 100);
+      otherExpenses = property.wifi;
+      break;
+    case 'selfManage':
+      rentalIncome = property.coLivingRental;
+      managementFee = 0; // Exclude management fee for self-managed scenarios
+      otherExpenses = property.wifi;
+      break;
+    case 'wholeUnit':
+    default:
+      rentalIncome = property.wholeUnitRental;
+      managementFee = 0;
+      otherExpenses = 0;
+      break;
+  }
 
   const totalExpenses = property.maintenanceSinking + managementFee + otherExpenses;
 
@@ -66,12 +134,10 @@ export const calculateAllMetrics = (property: Property, settings: GlobalSettings
   
   const loanScenario1 = calculateScenario(priceAsPerValuation * (loanPercentage1 / 100), settings.interestRate);
   const loanScenario2 = calculateScenario(priceAsPerValuation * (loanPercentage2 / 100), settings.interestRate);
-  
-  const LPPSA_LOAN_CAP = 750000;
-  const lppsaLoanAmount = Math.min(property.spaPrice, LPPSA_LOAN_CAP);
   const lppsa = calculateScenario(lppsaLoanAmount, settings.lppsaInterestRate);
 
-  return {
+  const standardCalculations: StandardCalculations = {
+    isAirbnb: false,
     priceAsPerValuation,
     netPrice,
     managementFee,
@@ -85,4 +151,6 @@ export const calculateAllMetrics = (property: Property, settings: GlobalSettings
     loanScenario2,
     lppsa
   };
+  
+  return standardCalculations;
 };

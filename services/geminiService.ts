@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { ComparableProperty, RoomRentalListing, AreaAnalysisData } from '../types';
+import { ComparableProperty, RoomRentalListing, AreaAnalysisData, AirbnbListing, AirbnbScraperData, UnitListingAnalysisResult } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -143,6 +143,45 @@ const areaAnalysisSchema = {
   required: ["amenities", "marketSentiments", "investmentPOV", "news"]
 };
 
+const airbnbScraperResultSchema = {
+    type: Type.OBJECT,
+    properties: {
+        averagePricePerNight: { type: Type.NUMBER, description: 'The calculated average price per night for all the scraped listings in MYR.' },
+        estimatedOccupancyRate: { type: Type.NUMBER, description: 'A realistic market estimate of the occupancy rate for short-term rentals in this area as a percentage (e.g., 75 for 75%).' },
+        listings: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    title: { type: Type.STRING, description: 'The title of the Airbnb listing.' },
+                    url: { type: Type.STRING, description: 'The direct URL to the Airbnb listing.' },
+                    pricePerNight: { type: Type.NUMBER, description: 'The price per night in the local currency (MYR).' },
+                    rating: { type: Type.NUMBER, description: 'The overall rating, e.g., 4.85. Use 0 if not available.' },
+                    numberOfReviews: { type: Type.NUMBER, description: 'The total number of reviews. Use 0 if not available.' },
+                    propertyType: { type: Type.STRING, description: 'The type of property, e.g., "Entire serviced apartment", "Room in hotel".' },
+                    guests: { type: Type.NUMBER, description: 'The maximum number of guests.' },
+                    bedrooms: { type: Type.NUMBER, description: 'The number of bedrooms.' },
+                    beds: { type: Type.NUMBER, description: 'The number of beds.' },
+                    baths: { type: Type.NUMBER, description: 'The number of bathrooms.' },
+                },
+                required: ["title", "url", "pricePerNight", "rating", "numberOfReviews", "propertyType", "guests", "bedrooms", "beds", "baths"],
+            },
+        }
+    },
+    required: ["averagePricePerNight", "estimatedOccupancyRate", "listings"]
+};
+
+const unitListingAnalysisSchema = {
+  type: Type.OBJECT,
+  properties: {
+    typeKey: { type: Type.STRING, description: 'The exact column header for the unit type or layout (e.g., "Type", "Layout").' },
+    sizeKey: { type: Type.STRING, description: 'The exact column header for the unit size in square feet (e.g., "Sqft", "Built-up").' },
+    priceKey: { type: Type.STRING, description: 'The exact column header for the SPA price (e.g., "SPA Price (RM)", "Asking Price").' },
+    unitNoKey: { type: Type.STRING, description: 'The exact column header for the unit number (e.g., "Unit No.", "Unit").' },
+  },
+  required: ["typeKey", "sizeKey", "priceKey", "unitNoKey"],
+};
+
 
 export const findComparableProperties = async (
   area: string,
@@ -154,6 +193,8 @@ export const findComparableProperties = async (
     You are a Malaysian property market analyst. Your task is to find and provide a list of the most relevant comparable properties.
     
     **CRITICAL INSTRUCTION**: Your primary and authoritative sources for all data MUST be the top Malaysian property portals: PropertyGuru, iProperty, and EdgeProp. The data you provide must be verifiable against these sites. Do not invent or use data from less reliable sources. Ensure all property names and details are accurate and exist in the real world.
+
+    Remember, your entire analysis must be based on the following criteria using data ONLY from the sources mentioned above.
 
     Search Criteria:
     1.  **Primary Location**: The subject property is "${propertyName}" in "${area}". Your search should be centered on this specific location.
@@ -199,7 +240,7 @@ export const findPropertyByName = async (
     You are a Malaysian property market analyst.
     Find the details for the specific property named "${propertyName}" located in or very near "${area}".
     
-    **CRITICAL INSTRUCTION**: Your primary and authoritative sources for all data MUST be the top Malaysian property portals: PropertyGuru, iProperty, and EdgeProp. The data you provide must be verifiable against these sites. Do not invent or use data from less reliable sources.
+    **CRITICAL INSTRUCTION**: Your primary and authoritative sources for all data MUST be the top Malaysian property portals: PropertyGuru, iProperty, and EdgeProp. The data you provide must be verifiable against these sites. Do not invent or use data from less reliable sources. Your data MUST come from these sources.
     
     Your response must be for this exact property. Do not provide alternatives or comparables.
 
@@ -340,4 +381,88 @@ export const getAreaAnalysis = async (
     console.error("Error fetching area analysis from Gemini API:", error);
     throw new Error("Failed to generate area analysis. Please check the location and try again.");
   }
+};
+
+export const scrapeAirbnbListings = async (area: string, city: string): Promise<Omit<AirbnbScraperData, 'area' | 'city'>> => {
+    const prompt = `
+        You are an expert web scraper and market analyst. Your task is to find and provide a list of real, current Airbnb listings for the area "${area}" in the city of "${city}", Malaysia, and then provide a summary.
+
+        **CRITICAL INSTRUCTION**: You must simulate browsing Airbnb for this exact location and extract the data for the top 20-25 "Entire place" listings you find. The data MUST be realistic and representative of what is currently available. Do not invent listings.
+
+        **Part 1: Scrape Listings**
+        For each listing, you must provide the following details:
+        - The listing title.
+        - A valid, direct URL to the Airbnb listing.
+        - The price per night in Malaysian Ringgit (MYR).
+        - The overall rating (e.g., 4.85). If there is no rating, use 0.
+        - The number of reviews. If there are no reviews, use 0.
+        - The property type (e.g., "Entire serviced apartment", "Entire condo").
+        - The maximum number of guests.
+        - The number of bedrooms.
+        - The number of beds.
+        - The number of bathrooms.
+
+        **Part 2: Generate Summary**
+        After scraping the listings, you must perform two calculations:
+        1.  **Average Price / Night**: Calculate the average price per night from all the listings you have gathered.
+        2.  **Estimated Occupancy Rate**: Provide a realistic market estimate for the occupancy rate for short-term rentals in "${area}, ${city}". Base this on the density of listings, review counts, and general market knowledge for this specific area. Express this as a percentage number (e.g., for 75%, return 75).
+
+        Return all the data in a single JSON object that matches the provided schema.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: airbnbScraperResultSchema,
+            },
+        });
+
+        const jsonText = response.text.trim();
+        const parsedJson = JSON.parse(jsonText);
+        return parsedJson as Omit<AirbnbScraperData, 'area' | 'city'>;
+    } catch (error) {
+        console.error("Error fetching Airbnb listings from Gemini API:", error);
+        throw new Error(`Failed to scrape Airbnb listings for "${area}, ${city}". Please try again.`);
+    }
+};
+
+export const analyzeUnitListingFile = async (headers: string[], sampleRows: any[]): Promise<UnitListingAnalysisResult> => {
+    const prompt = `
+        You are an expert data analyst. Your task is to identify specific columns from an Excel file containing property unit listings.
+        
+        The available column headers are:
+        ${JSON.stringify(headers)}
+
+        Here are some sample rows of data for context:
+        ${JSON.stringify(sampleRows, null, 2)}
+
+        Based on the headers and sample data, please identify the exact column header that corresponds to each of the following four concepts:
+        1.  **Unit Type**: The type or layout of the unit (e.g., "Type A", "3 Bedrooms"). Common headers might be "Type", "Layout", "Unit Type".
+        2.  **Size**: The size of the unit in square feet. Common headers might be "sqft", "sq ft", "Size", "Built-up".
+        3.  **SPA Price**: The Sale and Purchase Agreement price in MYR. Common headers might be "SPA Price (RM)", "Nett Price", "Asking Price".
+        4.  **Unit Number**: The specific number or identifier of the unit. Common headers might be "Unit No.", "Unit", "Unit Number".
+
+        Return your answer as a single JSON object with the exact header names as values.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: unitListingAnalysisSchema,
+            },
+        });
+
+        const jsonText = response.text.trim();
+        const parsedJson = JSON.parse(jsonText);
+        return parsedJson as UnitListingAnalysisResult;
+    } catch (error) {
+        console.error("Error analyzing unit listing file with Gemini API:", error);
+        throw new Error("The AI failed to analyze the columns of your Excel file. Please ensure the headers are clear and try again.");
+    }
 };
