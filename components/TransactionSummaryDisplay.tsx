@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { TransactionSummary } from '../types';
 import Input from './ui/Input';
@@ -22,6 +23,7 @@ const TransactionSummaryDisplay: React.FC<TransactionSummaryDisplayProps> = ({ s
             <tr>
               <th className="p-3 font-semibold text-gray-600">Development Name</th>
               <th className="p-3 font-semibold text-gray-600">Median Price (RM)</th>
+              <th className="p-3 font-semibold text-gray-600">Median BU (PSF)</th>
               <th className="p-3 font-semibold text-gray-600">Transaction Count</th>
             </tr>
           </thead>
@@ -41,6 +43,14 @@ const TransactionSummaryDisplay: React.FC<TransactionSummaryDisplayProps> = ({ s
                     type="number"
                     value={summary.medianPrice}
                     onChange={e => onUpdate(summary.id, 'medianPrice', parseFloat(e.target.value) || 0)}
+                    className="bg-transparent focus:bg-white"
+                  />
+                </td>
+                <td className="p-1.5 bg-yellow-50">
+                  <Input
+                    type="number"
+                    value={summary.medianPsf.toFixed(2)}
+                    onChange={e => onUpdate(summary.id, 'medianPsf', parseFloat(e.target.value) || 0)}
                     className="bg-transparent focus:bg-white"
                   />
                 </td>

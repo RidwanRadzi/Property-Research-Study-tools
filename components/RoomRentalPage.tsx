@@ -1,29 +1,31 @@
-
 import React, { useState, useMemo } from 'react';
-import { RoomRentalListing } from '../types';
+import { RoomRentalListing, RoomRentalData } from '../types';
 import { findRoomRentals } from '../services/geminiService';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Spinner from './ui/Spinner';
 
-interface RoomRentalPageProps {}
+interface RoomRentalPageProps {
+    data: RoomRentalData | null;
+    onSetData: (data: RoomRentalData | null) => void;
+}
 
-const RoomRentalPage: React.FC<RoomRentalPageProps> = () => {
-  const [area, setArea] = useState('Cyberjaya');
-  const [listings, setListings] = useState<RoomRentalListing[]>([]);
+const RoomRentalPage: React.FC<RoomRentalPageProps> = ({ data, onSetData }) => {
+  const [searchArea, setSearchArea] = useState(data?.area || 'Cyberjaya');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const listings = data?.listings || [];
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!area.trim()) return;
+    if (!searchArea.trim()) return;
 
     setIsLoading(true);
     setError(null);
-    setListings([]);
-
+    
     try {
-      const results = await findRoomRentals(area);
+      const results = await findRoomRentals(searchArea);
       const resultsWithIds = results.map(r => ({ ...r, id: crypto.randomUUID() }));
       
       const getRoomOrder = (roomType: string): number => {
@@ -36,9 +38,14 @@ const RoomRentalPage: React.FC<RoomRentalPageProps> = () => {
       
       resultsWithIds.sort((a, b) => getRoomOrder(a.roomType) - getRoomOrder(b.roomType));
 
-      setListings(resultsWithIds);
+      onSetData({
+          area: searchArea,
+          listings: resultsWithIds
+      });
+
     } catch (e: any) {
       setError(e.message || 'An unexpected error occurred.');
+      onSetData(null); // Clear data on error
     } finally {
       setIsLoading(false);
     }
@@ -96,7 +103,7 @@ const RoomRentalPage: React.FC<RoomRentalPageProps> = () => {
         <div className="mt-8">
             {rentalSummary && rentalSummary.length > 0 && (
                 <div className="mb-8">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-4">Rental Summary for {area}</h2>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">Rental Summary for {data?.area}</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {rentalSummary.map(summary => (
                              <div key={summary.roomType} className="bg-white p-6 rounded-xl border border-gray-200 shadow-xl flex flex-col">
@@ -163,7 +170,7 @@ const RoomRentalPage: React.FC<RoomRentalPageProps> = () => {
   return (
     <div className="-mt-8">
       <header className="text-center mb-10 w-full">
-        <h1 className="text-4xl font-bold text-[#700d1d] tracking-tight">Room Rental Reference</h1>
+        <h1 className="text-4xl font-bold text-[#700d1d] tracking-tight">Room Rental</h1>
         <p className="text-gray-600 mt-2">Find room rental prices for co-living analysis from sources like ibilik.my and mudah.my.</p>
       </header>
 
@@ -171,7 +178,7 @@ const RoomRentalPage: React.FC<RoomRentalPageProps> = () => {
         <form onSubmit={handleSearch} className="bg-white p-6 rounded-lg shadow-lg border border-gray-200 flex flex-col sm:flex-row items-end gap-4">
           <div className="flex-grow w-full">
             <label htmlFor="area" className="block text-sm font-medium text-gray-700 mb-1">Area / Location</label>
-            <Input id="area" type="text" value={area} onChange={e => setArea(e.target.value)} placeholder="e.g., Cyberjaya" required />
+            <Input id="area" type="text" value={searchArea} onChange={e => setSearchArea(e.target.value)} placeholder="e.g., Cyberjaya" required />
           </div>
           <Button type="submit" disabled={isLoading} className="w-full sm:w-auto h-10 flex-shrink-0">
             {isLoading ? <><Spinner /> Searching...</> : 'Search Room Rentals'}

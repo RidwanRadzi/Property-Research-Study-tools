@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { WholeUnitRentalData, WholeUnitDevelopmentSummary, WholeUnitRentalRawData } from '../types';
@@ -6,12 +5,12 @@ import Button from './ui/Button';
 import Spinner from './ui/Spinner';
 
 interface WholeUnitRentalPageProps {
-  onNavigateToAskingPrice: () => void;
   data: WholeUnitRentalData | null;
   onSetData: (data: WholeUnitRentalData | null) => void;
+  onSummaryGenerated: (summary: WholeUnitDevelopmentSummary[]) => void;
 }
 
-const WholeUnitRentalPage: React.FC<WholeUnitRentalPageProps> = ({ onNavigateToAskingPrice, data, onSetData }) => {
+const WholeUnitRentalPage: React.FC<WholeUnitRentalPageProps> = ({ data, onSetData, onSummaryGenerated }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,6 +80,31 @@ const WholeUnitRentalPage: React.FC<WholeUnitRentalPageProps> = ({ onNavigateToA
                 const rents = items.map(i => i._rent);
                 const psfs = items.map(i => i._psf);
 
+                // --- Mean Calculation ---
+                const meanRent = rents.length > 0 ? rents.reduce((a, b) => a + b, 0) / rents.length : 0;
+
+                // --- Mode Calculation ---
+                let modeRent: number | string = 'N/A';
+                if (rents.length > 1) {
+                    const frequencyMap: { [key: number]: number } = {};
+                    let maxFreq = 0;
+                    
+                    for (const rent of rents) {
+                        frequencyMap[rent] = (frequencyMap[rent] || 0) + 1;
+                        if (frequencyMap[rent] > maxFreq) {
+                            maxFreq = frequencyMap[rent];
+                        }
+                    }
+
+                    if (maxFreq > 1) {
+                        const modes = Object.keys(frequencyMap)
+                            .filter(rent => frequencyMap[Number(rent)] === maxFreq)
+                            .map(Number);
+                        modeRent = modes.join(', ');
+                    }
+                }
+
+
                 return {
                     bedroomType,
                     count: items.length,
@@ -88,6 +112,8 @@ const WholeUnitRentalPage: React.FC<WholeUnitRentalPageProps> = ({ onNavigateToA
                     maxRent: Math.max(...rents),
                     minPsf: Math.min(...psfs),
                     maxPsf: Math.max(...psfs),
+                    meanRent,
+                    modeRent,
                 };
             }).sort((a,b) => a.bedroomType.localeCompare(b.bedroomType));
 
@@ -136,6 +162,7 @@ const WholeUnitRentalPage: React.FC<WholeUnitRentalPageProps> = ({ onNavigateToA
                         rawData: jsonData,
                         summary,
                     });
+                    onSummaryGenerated(summary);
                 }
 
             } catch (err: any) {
@@ -176,6 +203,8 @@ const WholeUnitRentalPage: React.FC<WholeUnitRentalPageProps> = ({ onNavigateToA
                             <th className="p-3 font-semibold text-gray-600">No. Bedroom</th>
                             <th className="p-3 font-semibold text-gray-600 text-center">Listings</th>
                             <th className="p-3 font-semibold text-gray-600">Whole Unit Rental Range (RM)</th>
+                            <th className="p-3 font-semibold text-gray-600">Mean Rent (RM)</th>
+                            <th className="p-3 font-semibold text-gray-600">Mode Rent (RM)</th>
                             <th className="p-3 font-semibold text-gray-600">Rental PSF Range (RM)</th>
                         </tr>
                     </thead>
@@ -188,6 +217,8 @@ const WholeUnitRentalPage: React.FC<WholeUnitRentalPageProps> = ({ onNavigateToA
                                 <td className="p-3 text-gray-800">{bed.bedroomType}</td>
                                 <td className="p-3 text-gray-700 text-center">{bed.count}</td>
                                 <td className="p-3 text-gray-700 font-semibold">{`${bed.minRent.toLocaleString()} - ${bed.maxRent.toLocaleString()}`}</td>
+                                <td className="p-3 text-gray-700">{bed.meanRent.toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>
+                                <td className="p-3 text-gray-700">{bed.modeRent}</td>
                                 <td className="p-3 text-gray-700">{`${bed.minPsf.toFixed(2)} - ${bed.maxPsf.toFixed(2)}`}</td>
                             </tr>
                         )))}
@@ -269,12 +300,6 @@ const WholeUnitRentalPage: React.FC<WholeUnitRentalPageProps> = ({ onNavigateToA
                 {!isLoading && !error && (data ? renderDataView(data) : renderUploadView())}
             </main>
 
-            <div className="mt-12 w-full max-w-7xl flex justify-center items-center gap-6">
-                <Button onClick={onNavigateToAskingPrice} size="md">
-                    Next: Asking Price Summary
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                </Button>
-            </div>
         </div>
     );
 };

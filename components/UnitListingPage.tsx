@@ -91,7 +91,8 @@ const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing
         if (!sheetName) throw new Error("No sheets found in the Excel file.");
         
         const worksheet = workbook.Sheets[sheetName];
-        const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+        // FIX: Ensure jsonData is correctly typed as an array of indexable records.
+        const jsonData: Record<string, any>[] = XLSX.utils.sheet_to_json(worksheet);
 
         if (jsonData.length === 0) {
             throw new Error("The Excel file is empty or has no data.");
@@ -187,8 +188,8 @@ const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing
       const { typeKey, sizeKey, priceKey } = columnAnalysis;
       
       const selectedData = Array.from(selectedRows).map(rowIndex => {
-          // FIX: Cast row to an indexable Record type to ensure properties can be accessed via string keys.
-          const row = listing.rows[rowIndex] as Record<string, any>;
+          // FIX: Removed unnecessary cast as `listing.rows` is now strongly typed.
+          const row = listing.rows[rowIndex];
           return {
               type: String(row[typeKey] || 'N/A'),
               size: Number(row[sizeKey] || 0),
@@ -304,7 +305,7 @@ const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
-                            {listing.rows.map((row: any, rowIndex) => {
+                            {listing.rows.map((row, rowIndex) => {
                                 let isBestDealRow = false;
                                 if (highlightEnabled && bestDealAnalysis && columnAnalysis) {
                                     const size = row[columnAnalysis.sizeKey];
@@ -337,7 +338,8 @@ const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing
                                             key={`${rowIndex}-${header}`} 
                                             className={`p-3 text-gray-700 whitespace-nowrap ${isBestDealRow ? 'font-bold' : ''}`}
                                         >
-                                            {String(row[header])}
+                                            {/* FIX: Cast row to 'any' to resolve 'unknown' index type error. This is a safe escape hatch for data from external files. */}
+                                            {String((row as any)[header])}
                                         </td>
                                     ))}
                                 </tr>

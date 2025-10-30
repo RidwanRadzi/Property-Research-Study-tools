@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Transaction, TransactionSummary, ComparableProperty } from '../types';
@@ -17,7 +18,7 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
     const [fileName, setFileName] = useState<string | null>(null);
     const [processing, setProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [identifiedKeys, setIdentifiedKeys] = useState<{ devKey: string; priceKey: string } | null>(null);
+    const [identifiedKeys, setIdentifiedKeys] = useState<{ devKey: string; priceKey: string; sizeKey: string; } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const calculateSummaries = (data: Transaction[], fileHeaders: string[]) => {
@@ -38,6 +39,13 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
         const priceKey = findKey(['price (rm)', 'price']);
         if (!priceKey) {
             setError("Could not automatically identify the 'Price (RM)' column. Please check the Excel file header.");
+            return;
+        }
+
+        // --- Find Size Key ---
+        const sizeKey = findKey(['size', 'sqft', 'built-up', 'bu']);
+         if (!sizeKey) {
+            setError("Could not automatically identify the 'Size' or 'Built-up' column. Please check the Excel file header.");
             return;
         }
 
@@ -76,33 +84,47 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
             return;
         }
         
-        setIdentifiedKeys({ devKey, priceKey });
+        setIdentifiedKeys({ devKey, priceKey, sizeKey });
 
-        const groupedByDev: { [key: string]: number[] } = {};
+        const groupedByDev: { [key: string]: { prices: number[], psfs: number[] } } = {};
         data.forEach(row => {
             const devName = row[devKey!];
             const price = parseFloat(String(row[priceKey!]).replace(/,/g, ''));
-            if (devName && !isNaN(price)) {
+            const size = parseFloat(String(row[sizeKey!]).replace(/,/g, ''));
+            
+            if (devName && !isNaN(price) && !isNaN(size) && size > 0) {
                 if (!groupedByDev[devName]) {
-                    groupedByDev[devName] = [];
+                    groupedByDev[devName] = { prices: [], psfs: [] };
                 }
-                groupedByDev[devName].push(price);
+                groupedByDev[devName].prices.push(price);
+                groupedByDev[devName].psfs.push(price / size);
             }
         });
 
-        const summaries: Omit<TransactionSummary, 'id'>[] = Object.entries(groupedByDev).map(([devName, prices]) => {
+        const summaries: Omit<TransactionSummary, 'id'>[] = Object.entries(groupedByDev).map(([devName, {prices, psfs}]) => {
             prices.sort((a, b) => a - b);
             let medianPrice;
-            const mid = Math.floor(prices.length / 2);
+            const midPrice = Math.floor(prices.length / 2);
             if (prices.length % 2 === 0) {
-                medianPrice = (prices[mid - 1] + prices[mid]) / 2;
+                medianPrice = (prices[midPrice - 1] + prices[midPrice]) / 2;
             } else {
-                medianPrice = prices[mid];
+                medianPrice = prices[midPrice];
             }
+            
+            psfs.sort((a, b) => a - b);
+            let medianPsf;
+            const midPsf = Math.floor(psfs.length / 2);
+            if (psfs.length % 2 === 0) {
+                medianPsf = (psfs[midPsf - 1] + psfs[midPsf]) / 2;
+            } else {
+                medianPsf = psfs[midPsf];
+            }
+
 
             return {
                 development: devName,
                 medianPrice: medianPrice,
+                medianPsf: medianPsf,
                 transactionCount: prices.length
             };
         });
@@ -216,9 +238,9 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
     return (
         <div className="flex flex-col items-center w-full -mt-8">
             <header className="text-center mb-10 w-full">
-                <h1 className="text-5xl font-bold text-[#700d1d] tracking-tight">Transaction</h1>
+                <h1 className="text-5xl font-bold text-[#700d1d] tracking-tight">Transaction Filter</h1>
                 <p className="text-gray-600 mt-4 text-lg max-w-3xl mx-auto">
-                    Upload an Excel file. The app will automatically find the development and price columns, filter out corporate sales, and generate a summary.
+                    Upload an Excel file. The app will automatically find the development, price, and size columns, filter out corporate sales, and generate a summary.
                 </p>
             </header>
 
@@ -245,8 +267,9 @@ const TransactionFilterPage: React.FC<TransactionFilterPageProps> = ({ onNavigat
                     {identifiedKeys && (
                         <div className="mt-4 text-center text-sm text-green-800 bg-green-50 p-3 rounded-md">
                             Successfully identified columns: 
-                            <strong> Development</strong> as '{identifiedKeys.devKey}' and 
-                            <strong> Price</strong> as '{identifiedKeys.priceKey}'.
+                            <strong> Development</strong> as '{identifiedKeys.devKey}', 
+                            <strong> Price</strong> as '{identifiedKeys.priceKey}', and
+                            <strong> Size</strong> as '{identifiedKeys.sizeKey}'.
                         </div>
                     )}
                     

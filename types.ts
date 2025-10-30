@@ -1,3 +1,5 @@
+export type ScraperMode = 'ai' | 'live';
+
 export type ProjectionMode = 'wholeUnit' | 'coLiving' | 'selfManage' | 'airbnb';
 
 export interface Property {
@@ -145,6 +147,7 @@ export interface TransactionSummary {
   id: string;
   development: string;
   medianPrice: number;
+  medianPsf: number;
   transactionCount: number;
 }
 
@@ -162,7 +165,7 @@ export interface Floorplan {
 export interface UnitListing {
   name: string;
   headers: string[];
-  // FIX: Changed to Record<string, any>[] for better type safety than any[]
+  // FIX: Changed rows to Record<string, any>[] for better type safety than any[].
   rows: Record<string, any>[];
 }
 
@@ -181,6 +184,12 @@ export interface RoomRentalListing {
   rentalPrice: number;
   furnishing: string;
   source: string;
+}
+
+// New type for Room Rental Page
+export interface RoomRentalData {
+    area: string;
+    listings: RoomRentalListing[];
 }
 
 // Types for Area Analysis Page
@@ -231,6 +240,8 @@ export interface BedroomSummary {
   maxRent: number;
   minPsf: number;
   maxPsf: number;
+  meanRent: number;
+  modeRent: number | string;
 }
 
 export interface WholeUnitDevelopmentSummary {
@@ -255,8 +266,10 @@ export interface AskingPriceBedroomSummary {
   count: number;
   minPrice: number;
   maxPrice: number;
+  avgPrice: number;
   minPsf: number;
   maxPsf: number;
+  avgPsf: number;
 }
 
 export interface AskingPriceDevelopmentSummary {
@@ -270,6 +283,26 @@ export interface AskingPriceData {
   rawData: AskingPriceRawData[];
   summary: AskingPriceDevelopmentSummary[];
 }
+
+// New types for Transaction Page
+export interface TransactionRawData {
+  [key: string]: string | number;
+}
+
+export interface TransactionDevelopmentSummary {
+  developmentName: string;
+  count: number;
+  medianPrice: number;
+  medianPsf: number;
+}
+
+export interface TransactionData {
+  fileName: string;
+  headers: string[];
+  rawData: TransactionRawData[];
+  summary: TransactionDevelopmentSummary[];
+}
+
 
 // New types for Airbnb Scraper Page
 export interface AirbnbListing {
@@ -294,6 +327,34 @@ export interface AirbnbScraperData {
   estimatedOccupancyRate?: number;
 }
 
+// New types for Airbnb File Upload Page
+export interface AirbnbRawData {
+  [key: string]: string | number;
+}
+
+export interface AirbnbLayoutSummary {
+  layoutType: string;
+  count: number;
+  avgDailyRate: number;
+  highestDailyRate: number;
+  avgOccupancyRate: number;
+}
+
+export interface AirbnbOccupancySummary {
+  bestOccupancyRate: number; // Q3
+  currentOccupancyRate: number; // Q2
+  worstOccupancyRate: number; // Q1
+}
+
+export interface AirbnbFileData {
+  fileName: string;
+  headers: string[];
+  rawData: AirbnbRawData[];
+  layoutSummary: AirbnbLayoutSummary[];
+  occupancySummary: AirbnbOccupancySummary | null;
+}
+
+
 export interface SavedSession {
   id: number; // timestamp
   name: string; // e.g., "Vybe - Cyberjaya"
@@ -308,7 +369,10 @@ export interface SavedSession {
   transactionSummaries: TransactionSummary[];
   wholeUnitRentalData: WholeUnitRentalData | null;
   askingPriceData: AskingPriceData | null;
+  transactionData: TransactionData | null;
   airbnbScraperData: AirbnbScraperData | null;
+  airbnbFileData: AirbnbFileData | null;
+  roomRentalData: RoomRentalData | null;
   // State from ProjectionPage.tsx
   globalSettings: GlobalSettings;
   projectionMode: ProjectionMode;

@@ -6,12 +6,11 @@ import Button from './ui/Button';
 import Spinner from './ui/Spinner';
 
 interface AreaAnalysisPageProps {
-    onNavigateToWholeUnitRentals: () => void;
     area: string;
     propertyName: string;
 }
 
-const AreaAnalysisPage: React.FC<AreaAnalysisPageProps> = ({ onNavigateToWholeUnitRentals, area, propertyName }) => {
+const AreaAnalysisPage: React.FC<AreaAnalysisPageProps> = ({ area, propertyName }) => {
     const [analysisData, setAnalysisData] = useState<AreaAnalysisData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -178,12 +177,6 @@ const AreaAnalysisPage: React.FC<AreaAnalysisPageProps> = ({ onNavigateToWholeUn
                 {renderContent()}
             </main>
 
-            <div className="mt-12 w-full max-w-7xl flex justify-center items-center gap-6">
-                <Button onClick={onNavigateToWholeUnitRentals} size="md" disabled={isLoading || !!error}>
-                    Next: Whole Unit Rental
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                </Button>
-            </div>
         </div>
     );
 };

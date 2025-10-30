@@ -1,8 +1,11 @@
+
+
 import React, { memo, useState, useEffect } from 'react';
 import { Property, PropertyCalculations, ProjectionMode, RentalAssumption, AirbnbCalculations, StandardCalculations } from '../types';
 import Input from './ui/Input';
 import Button from './ui/Button';
 import Select from './ui/Select';
+import ProjectionSummaryCard from './ProjectionSummaryCard';
 
 // Define discriminated union for table row types
 type SectionRow = {
@@ -21,7 +24,8 @@ type InputRow = {
 type ValueRow = {
   isInput: false;
   label: string;
-  value: (d: StandardCalculations) => number;
+  // FIX: Use PropertyCalculations to allow this type to be used for both Standard and Airbnb calculations.
+  value: (d: PropertyCalculations) => number;
   subLabel?: string;
   highlight?: boolean;
   isNotCurrency?: boolean;
@@ -63,6 +67,11 @@ type AirbnbHeaderRow = {
 type TableRow = SectionRow | InputRow | ValueRow | EditableSectionRow | DerivedInputRow;
 type AirbnbTableRow = SectionRow | InputRow | DerivedInputRow | ValueRow | AirbnbValueRow | AirbnbHeaderRow | AirbnbCashflowRow;
 
+export interface AISummaryState {
+  summary: string | null;
+  isLoading: boolean;
+  error: string | null;
+}
 
 interface ProjectionTableProps {
   properties: Property[];
@@ -75,6 +84,7 @@ interface ProjectionTableProps {
   loanPercentage2: number;
   setLoanPercentage2: (value: number) => void;
   rentalAssumptions: RentalAssumption[];
+  aiSummaries: { [propertyId: number]: AISummaryState };
 }
 
 // A new component to handle the complex state of a derived, but editable, input field.
@@ -165,19 +175,24 @@ const SectionHeader: React.FC<{ label: string }> = ({ label }) => (
   </th>
 );
 
-const PropertyHeader: React.FC<{ property: Property; onRemove: (id: number) => void }> = memo(({ property, onRemove }) => (
-    <th className="p-3 text-left font-semibold sticky top-0 z-20 bg-white min-w-[200px] border-l border-gray-200">
+const PropertyHeader: React.FC<{ property: Property; onRemove: (id: number) => void; summaryState: AISummaryState; }> = memo(({ property, onRemove, summaryState }) => (
+    <th className="p-3 text-left font-semibold sticky top-0 z-20 bg-white min-w-[300px] border-l border-gray-200 align-top">
         <div className="flex justify-between items-start">
             <div>
                 <span className="text-[#700d1d]">{property.type}</span>
                 <span className="block text-xs font-normal text-gray-600">{property.bedroomsType}</span>
             </div>
-            <Button onClick={() => onRemove(property.id)} variant="danger" size="sm" className="opacity-50 hover:opacity-100 transition-opacity !p-1 h-6 w-6">
+            <Button onClick={() => onRemove(property.id)} variant="danger" size="sm" className="opacity-50 hover:opacity-100 transition-opacity !p-1 h-6 w-6 flex-shrink-0 ml-2">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </Button>
         </div>
+        <ProjectionSummaryCard 
+            isLoading={summaryState.isLoading}
+            summary={summaryState.summary}
+            error={summaryState.error}
+        />
     </th>
 ));
 
@@ -205,14 +220,14 @@ const AirbnbProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMode'
         { label: 'Net PSF', isInput: true, field: 'netPsf' },
         { isDerivedInput: true, label: 'Net Price', derivedField: 'netPrice', value: (d) => d.netPrice },
         // Monthly installments moved to top
-        { isInput: false, label: `Monthly Instalment at ${loanPercentage1}%`, value: (d) => (d as AirbnbCalculations).monthlyInstallmentLoan1 },
-        { isInput: false, label: 'Monthly Instalment at Nett', value: (d) => (d as AirbnbCalculations).monthlyInstallmentNett },
-        { isInput: false, label: `Monthly Instalment at ${loanPercentage2}%`, value: (d) => (d as AirbnbCalculations).monthlyInstallmentLoan2 },
-        { isInput: false, label: 'Monthly Instalment at LPPSA', value: (d) => (d as AirbnbCalculations).monthlyInstallmentLppsa },
+        { isInput: false, label: `Monthly Instalment at ${loanPercentage1}%`, value: (d) => { if (d.isAirbnb) return d.monthlyInstallmentLoan1; return 0; } },
+        { isInput: false, label: 'Monthly Instalment at Nett', value: (d) => { if (d.isAirbnb) return d.monthlyInstallmentNett; return 0; } },
+        { isInput: false, label: `Monthly Instalment at ${loanPercentage2}%`, value: (d) => { if (d.isAirbnb) return d.monthlyInstallmentLoan2; return 0; } },
+        { isInput: false, label: 'Monthly Instalment at LPPSA', value: (d) => { if (d.isAirbnb) return d.monthlyInstallmentLppsa; return 0; } },
         // Income & Expenses
         { isSection: true, label: "Income & Expenses (Monthly)" },
         { label: 'Rental/ night', isInput: true, field: 'airbnbRentalPerNight' },
-        { isInput: false, label: 'Total Comitment at Nett', value: (d) => (d as AirbnbCalculations).totalCommitmentAtNett },
+        { isInput: false, label: 'Total Comitment at Nett', value: (d) => { if (d.isAirbnb) return d.totalCommitmentAtNett; return 0; } },
         { label: 'Maintenance + sinking', isInput: true, field: 'maintenanceSinking' },
         { label: 'Wifi', isInput: true, field: 'wifi' },
         
@@ -337,8 +352,8 @@ const AirbnbProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMode'
                             } else if ('value' in row) { // Type guard for ValueRow
                                 // This block handles ValueRows in the top section
                                 const calc = calculatedData[pIndex];
-                                // This value must be cast because `row.value` expects `StandardCalculations`, but it works for both.
-                                const value = (row as any).value(calc); 
+                                // FIX: Removed 'as any' cast now that ValueRow accepts PropertyCalculations.
+                                const value = row.value(calc); 
                                 return (
                                     <td key={p.id} className={`p-1.5 border-l border-gray-200`}>
                                     <div className="p-2 h-10 flex items-center">{renderValue(value, !row.isNotCurrency)}</div>
@@ -355,7 +370,9 @@ const AirbnbProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMode'
 };
 
 
-const StandardProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMode'>> = ({
+// FIX: The component's props were incorrectly omitting 'projectionMode', which is necessary for its logic.
+// The unused 'onRemoveProperty' prop is now omitted instead for better type safety.
+const StandardProjectionBody: React.FC<Omit<ProjectionTableProps, 'onRemoveProperty'>> = ({
     properties,
     calculatedData,
     onUpdateProperty,
@@ -380,7 +397,8 @@ const StandardProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMod
   
     const incomeAndExpensesSection: TableRow[] = [
       { isSection: true, label: "Income & Expenses (Monthly)" },
-      { isInput: false, label: 'Monthly Instalment at Nett', value: (d) => d.nettLoan.monthlyInstallment },
+      // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+      { isInput: false, label: 'Monthly Instalment at Nett', value: (d) => { if ('nettLoan' in d) { return d.nettLoan.monthlyInstallment; } return 0; } },
     ];
 
     if (projectionMode === 'wholeUnit') {
@@ -396,7 +414,8 @@ const StandardProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMod
       );
       if (projectionMode === 'coLiving') {
           incomeAndExpensesSection.push(
-              { isInput: false, label: 'Co-liv management fee', value: (d) => d.managementFee }
+              // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+              { isInput: false, label: 'Co-liv management fee', value: (d) => { if ('managementFee' in d) { return d.managementFee; } return 0; } }
           );
       }
       incomeAndExpensesSection.push(
@@ -405,18 +424,24 @@ const StandardProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMod
     }
 
     incomeAndExpensesSection.push(
-        { isInput: false, label: 'Total Commitment at Nett', value: (d) => d.normalMortgage.totalCommitmentMonthly }
+        // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+        { isInput: false, label: 'Total Commitment at Nett', value: (d) => { if ('normalMortgage' in d) { return d.normalMortgage.totalCommitmentMonthly; } return 0; } }
     );
     
     const getScenarioMetricRows = (selector: (d: StandardCalculations) => any, cashflowLabel: string, includeCashback = true): TableRow[] => {
         const rows: TableRow[] = [
-            { isInput: false, label: 'Total Commitment Monthly', value: (d: StandardCalculations) => selector(d).totalCommitmentMonthly },
-            { isInput: false, label: 'Commitment', value: (d: StandardCalculations) => selector(d).commitment, subLabel: 'Monthly Loan' },
-            { isInput: false, label: cashflowLabel, value: (d: StandardCalculations) => selector(d).cashflow },
-            { isInput: false, label: `${cashflowLabel} excluding Principal`, value: (d: StandardCalculations) => selector(d).cashflowExcludingPrincipal },
+            // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+            { isInput: false, label: 'Total Commitment Monthly', value: (d) => { if ('normalMortgage' in d) { return selector(d).totalCommitmentMonthly; } return 0; } },
+            // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+            { isInput: false, label: 'Commitment', value: (d) => { if ('normalMortgage' in d) { return selector(d).commitment; } return 0; }, subLabel: 'Monthly Loan' },
+            // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+            { isInput: false, label: cashflowLabel, value: (d) => { if ('normalMortgage' in d) { return selector(d).cashflow; } return 0; } },
+            // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+            { isInput: false, label: `${cashflowLabel} excluding Principal`, value: (d) => { if ('normalMortgage' in d) { return selector(d).cashflowExcludingPrincipal; } return 0; } },
         ];
         if (includeCashback) {
-            rows.push({ isInput: false, label: 'Cashback', value: (d: StandardCalculations) => selector(d).cashback, highlight: true });
+            // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+            rows.push({ isInput: false, label: 'Cashback', value: (d) => { if ('normalMortgage' in d) { return selector(d).cashback; } return 0; }, highlight: true });
         }
         return rows;
     }
@@ -437,9 +462,12 @@ const StandardProjectionBody: React.FC<Omit<ProjectionTableProps, 'projectionMod
       ...incomeAndExpensesSection,
       
       { isSection: true, label: "Normal Mortgage nett" },
-      { isInput: false, label: 'Commitment at Net', value: (d) => d.normalMortgage.commitment },
-      { isInput: false, label: 'Net Cashflow (no cashback)', value: (d) => d.normalMortgage.cashflow },
-      { isInput: false, label: 'Net Cashflow excluding Principal', value: (d) => d.normalMortgage.cashflowExcludingPrincipal },
+      // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+      { isInput: false, label: 'Commitment at Net', value: (d) => { if ('normalMortgage' in d) { return d.normalMortgage.commitment; } return 0; } },
+      // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+      { isInput: false, label: 'Net Cashflow (no cashback)', value: (d) => { if ('normalMortgage' in d) { return d.normalMortgage.cashflow; } return 0; } },
+      // FIX: Use 'in' operator for type guarding discriminated union to resolve type error.
+      { isInput: false, label: 'Net Cashflow excluding Principal', value: (d) => { if ('normalMortgage' in d) { return d.normalMortgage.cashflowExcludingPrincipal; } return 0; } },
       
       { isEditableSection: true, label: 'Loan at valuation', value: loanPercentage1, onChange: setLoanPercentage1 },
       ...getScenarioMetricRows((d) => d.loanScenario1, `Cashflow (${loanPercentage1}% loan)`),
@@ -567,7 +595,12 @@ const ProjectionTable: React.FC<ProjectionTableProps> = (props) => {
         <tr>
           <th className="p-3 text-left font-semibold text-gray-700 sticky top-0 left-0 z-30 bg-white min-w-[250px]">Metric</th>
           {props.properties.map(p => (
-            <PropertyHeader key={p.id} property={p} onRemove={props.onRemoveProperty} />
+            <PropertyHeader 
+              key={p.id} 
+              property={p} 
+              onRemove={props.onRemoveProperty} 
+              summaryState={props.aiSummaries[p.id] || { isLoading: true, summary: null, error: null }}
+            />
           ))}
         </tr>
       </thead>

@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 // FIX: Import DevelopmentSummary to correctly type the data from summaryData.
 import { SummaryData, DevelopmentSummary } from '../types';
@@ -6,10 +7,10 @@ import Button from './ui/Button';
 
 interface SummaryPageProps {
   summaryData: SummaryData | null;
-  onNavigateToTransactionFilter: () => void;
+  onNavigateToAreaAnalysis: () => void;
 }
 
-const SummaryPage: React.FC<SummaryPageProps> = ({ summaryData, onNavigateToTransactionFilter }) => {
+const SummaryPage: React.FC<SummaryPageProps> = ({ summaryData, onNavigateToAreaAnalysis }) => {
   if (!summaryData) {
     return (
       <div className="text-center">
@@ -91,8 +92,8 @@ const SummaryPage: React.FC<SummaryPageProps> = ({ summaryData, onNavigateToTran
         </div>
 
         <div className="mt-12 flex justify-center items-center gap-6">
-            <Button onClick={onNavigateToTransactionFilter} size="md">
-                Next: Transaction Filter
+            <Button onClick={onNavigateToAreaAnalysis} size="md">
+                Next: Area Analysis
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>

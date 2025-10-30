@@ -1,8 +1,22 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { ComparableProperty, RoomRentalListing, AreaAnalysisData, AirbnbListing, AirbnbScraperData, UnitListingAnalysisResult } from '../types';
+import { ComparableProperty, RoomRentalListing, AreaAnalysisData, AirbnbListing, AirbnbScraperData, UnitListingAnalysisResult, Property, PropertyCalculations } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+// --- Live Scraper URL Management ---
+// This allows the app to dynamically set the scraper URL from the UI for testing.
+export const setLiveScraperBaseUrl = (url: string) => {
+    if (url) {
+        sessionStorage.setItem('liveScraperBaseUrl', url);
+    } else {
+        sessionStorage.removeItem('liveScraperBaseUrl');
+    }
+};
+
+const getLiveScraperBaseUrl = () => {
+    return sessionStorage.getItem('liveScraperBaseUrl') || 'https://far-capital-scraper-507565751541.europe-west1.run.app';
+};
+
 
 const comparablePropertiesSchema = {
   type: Type.ARRAY,
@@ -183,12 +197,17 @@ const unitListingAnalysisSchema = {
 };
 
 
-export const findComparableProperties = async (
+export const findComparablePropertiesAI = async (
   area: string,
   propertyName: string,
   residenceType: string,
-  radius: number
+  radius: number,
+  layouts: string[]
 ): Promise<ComparableProperty[]> => {
+  const layoutFilterInstruction = layouts.length > 0
+    ? `5.  **Layout Types**: The search MUST be filtered to only include properties that offer at least one of the following layouts: ${layouts.join(', ')}. This is a strict requirement.`
+    : '';
+
   const prompt = `
     You are a Malaysian property market analyst. Your task is to find and provide a list of the most relevant comparable properties.
     
@@ -201,6 +220,7 @@ export const findComparableProperties = async (
     2.  **Radius**: All comparable properties should be within a ${radius}km radius of the subject property. The results should be located within the "${area}" area only.
     3.  **Recency**: Prioritize properties completed from 2020 onwards. List these first. You can include highly relevant older properties if newer ones are not available.
     4.  **Residence Type**: The comparables should be of the type "${residenceType}".
+    ${layoutFilterInstruction}
 
     **Important Note on Residence Type**:
     - If the Residence Type is "Serviced Apartment/Condominium" or "Apartment", you must treat it as a high-rise strata property.
@@ -231,6 +251,52 @@ export const findComparableProperties = async (
     throw new Error("Failed to generate comparable properties. Please check your inputs and try again.");
   }
 };
+
+export const findComparableProperties = async (
+  area: string,
+  propertyName:string,
+  residenceType: string,
+  radius: number,
+  layouts: string[]
+): Promise<ComparableProperty[]> => {
+  const baseUrl = getLiveScraperBaseUrl();
+  // The endpoint name 'findComparables' should match your Cloud Function name
+  const CLOUD_FUNCTION_URL = `${baseUrl}/findComparables`;
+  
+  const params = new URLSearchParams({
+    area,
+    propertyName,
+    residenceType,
+    radius: String(radius)
+  });
+  
+  layouts.forEach(layout => {
+    params.append('layouts', layout);
+  });
+
+
+  try {
+    const response = await fetch(`${CLOUD_FUNCTION_URL}?${params.toString()}`);
+    
+    if (!response.ok) {
+      // Try to parse error message from backend, otherwise use status text
+      const errorText = await response.text();
+      try {
+        const errorData = JSON.parse(errorText);
+        throw new Error(`Live Scraper failed: ${errorData.message || response.statusText}`);
+      } catch (e) {
+        throw new Error(`Live Scraper failed with status ${response.status}: ${errorText}`);
+      }
+    }
+
+    const data = await response.json();
+    return data as ComparableProperty[];
+  } catch (error: any) {
+    console.error("Error calling findComparableProperties cloud function:", error);
+    throw new Error(`Could not connect to the Live Scraper service. ${error.message}`);
+  }
+};
+
 
 export const findPropertyByName = async (
   propertyName: string,
@@ -383,7 +449,7 @@ export const getAreaAnalysis = async (
   }
 };
 
-export const scrapeAirbnbListings = async (area: string, city: string): Promise<Omit<AirbnbScraperData, 'area' | 'city'>> => {
+export const scrapeAirbnbListingsAI = async (area: string, city: string): Promise<Omit<AirbnbScraperData, 'area' | 'city'>> => {
     const prompt = `
         You are an expert web scraper and market analyst. Your task is to find and provide a list of real, current Airbnb listings for the area "${area}" in the city of "${city}", Malaysia, and then provide a summary.
 
@@ -429,6 +495,35 @@ export const scrapeAirbnbListings = async (area: string, city: string): Promise<
     }
 };
 
+export const scrapeAirbnbListings = async (area: string, city: string): Promise<Omit<AirbnbScraperData, 'area' | 'city'>> => {
+  const baseUrl = getLiveScraperBaseUrl();
+  // The endpoint name 'scrapeAirbnb' should match your Cloud Function name
+  const CLOUD_FUNCTION_URL = `${baseUrl}/scrapeAirbnb`;
+
+  const params = new URLSearchParams({ area, city });
+
+  try {
+    const response = await fetch(`${CLOUD_FUNCTION_URL}?${params.toString()}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(`Live Scraper failed: ${errorData.message || response.statusText}`);
+      } catch (e) {
+          throw new Error(`Live Scraper failed with status ${response.status}: ${errorText}`);
+      }
+    }
+
+    const data = await response.json();
+    return data as Omit<AirbnbScraperData, 'area' | 'city'>;
+  } catch (error: any) {
+    console.error("Error calling scrapeAirbnbListings cloud function:", error);
+    throw new Error(`Could not connect to the Live Scraper service. ${error.message}`);
+  }
+};
+
+
 export const analyzeUnitListingFile = async (headers: string[], sampleRows: any[]): Promise<UnitListingAnalysisResult> => {
     const prompt = `
         You are an expert data analyst. Your task is to identify specific columns from an Excel file containing property unit listings.
@@ -464,5 +559,40 @@ export const analyzeUnitListingFile = async (headers: string[], sampleRows: any[
     } catch (error) {
         console.error("Error analyzing unit listing file with Gemini API:", error);
         throw new Error("The AI failed to analyze the columns of your Excel file. Please ensure the headers are clear and try again.");
+    }
+};
+
+export const generateProjectionSummary = async (property: Property, calculations: PropertyCalculations): Promise<string> => {
+    const prompt = `
+        You are a Malaysian property investment advisor. Your audience is non-technical.
+        Based on the following data for a single property layout, provide a concise (2-3 sentences) summary of its investment potential.
+
+        **Key Instructions:**
+        - Start with the most important financial outcome (e.g., "This layout shows a positive cash flow of RM X...").
+        - Mention a key metric like cash flow (for normal mortgage) or cashback (for refinancing scenarios).
+        - Use simple, direct language. Avoid jargon.
+        - The currency is Malaysian Ringgit (RM).
+        - If cash flow is negative, state it clearly as a potential risk.
+
+        **Property Data:**
+        - Layout Type: ${property.type} (${property.bedroomsType})
+        - Size: ${property.size} sqft
+        - Nett Price: RM ${calculations.netPrice.toLocaleString()}
+
+        **Financial Projections:**
+        ${JSON.stringify(calculations, null, 2)}
+
+        Provide only the summary text, without any preamble.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error generating projection summary from Gemini API:", error);
+        throw new Error("The AI failed to generate a summary for this property.");
     }
 };

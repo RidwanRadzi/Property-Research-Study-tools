@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Property, GlobalSettings as GlobalSettingsType, ProjectionMode, TransactionSummary } from '../types';
-import ProjectionTable from './ProjectionTable';
+import ProjectionTable, { AISummaryState } from './ProjectionTable';
 import GlobalSettings from './GlobalSettings';
 import { calculateAllMetrics } from '../services/loanCalculator';
 import Button from './ui/Button';
 import TransactionSummaryDisplay from './TransactionSummaryDisplay';
+import { generateProjectionSummary } from '../services/geminiService';
 
 interface ProjectionPageProps {
   properties: Property[];
@@ -42,7 +43,51 @@ const ProjectionPage: React.FC<ProjectionPageProps> = ({
   onUpdateTransactionSummary,
 }) => {
 
-  const calculatedData = properties.map(p => calculateAllMetrics(p, globalSettings, projectionMode, loanPercentage1, loanPercentage2));
+  const calculatedData = useMemo(() => properties.map(p => 
+      calculateAllMetrics(p, globalSettings, projectionMode, loanPercentage1, loanPercentage2)
+  ), [properties, globalSettings, projectionMode, loanPercentage1, loanPercentage2]);
+  
+  const [aiSummaries, setAiSummaries] = useState<{ [propertyId: number]: AISummaryState }>({});
+
+  const dependenciesString = JSON.stringify({ properties, calculatedData });
+
+  useEffect(() => {
+      const generateAllSummaries = async () => {
+          // Set loading state for all visible properties
+          const initialSummaries: { [propertyId: number]: AISummaryState } = {};
+          properties.forEach(p => {
+              initialSummaries[p.id] = { isLoading: true, summary: null, error: null };
+          });
+          setAiSummaries(initialSummaries);
+          
+          // Use Promise.all to fetch them concurrently
+          const summaryPromises = properties.map((property, index) => {
+              const calcs = calculatedData[index];
+              return generateProjectionSummary(property, calcs)
+                  .then(summaryText => ({ id: property.id, summary: summaryText, error: null }))
+                  .catch(e => ({ id: property.id, summary: null, error: e.message || "Failed to load summary." }));
+          });
+
+          const results = await Promise.all(summaryPromises);
+
+          // Update state with all results at once
+          setAiSummaries(prev => {
+              const newSummaries: { [propertyId: number]: AISummaryState } = {};
+              results.forEach(result => {
+                  newSummaries[result.id] = { isLoading: false, summary: result.summary, error: result.error };
+              });
+              return newSummaries;
+          });
+      };
+
+      if (properties.length > 0) {
+          generateAllSummaries();
+      } else {
+          setAiSummaries({}); // Clear if no properties
+      }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dependenciesString]);
+
 
   return (
     <div className="-mt-8">
@@ -110,6 +155,7 @@ const ProjectionPage: React.FC<ProjectionPageProps> = ({
               loanPercentage2={loanPercentage2}
               setLoanPercentage2={setLoanPercentage2}
               rentalAssumptions={globalSettings.rentalAssumptions}
+              aiSummaries={aiSummaries}
             />
           ) : (
             <div className="text-center py-20">
