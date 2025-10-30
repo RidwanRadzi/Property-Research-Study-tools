@@ -1,4 +1,3 @@
-
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Floorplan } from '../types';
 import Button from './ui/Button';
@@ -15,7 +14,6 @@ const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorpla
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
-      // FIX: Use spread syntax to create a properly typed File[] array, ensuring 'file' is inferred correctly.
       for (const file of [...event.target.files]) {
         if (file.type.startsWith('image/')) {
           const reader = new FileReader();
@@ -29,7 +27,6 @@ const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorpla
           reader.readAsDataURL(file);
         }
       }
-      // Reset the input value to allow uploading the same file again
       event.target.value = '';
     }
   };
@@ -153,7 +150,7 @@ const FloorplanPage: React.FC<FloorplanPageProps> = ({ floorplans, onAddFloorpla
               onClick={() => setSelectedFloorplan(null)}
               variant="danger"
               size="sm"
-              className="absolute -top-3 -right-3 !p-2 h-9 w-9 rounded-full shadow-lg"
+              className="absolute -top-3 -right-3 !p-2 h-9 w-9 rounded-full shadow-lg z-10"
               aria-label="Close maximized view"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

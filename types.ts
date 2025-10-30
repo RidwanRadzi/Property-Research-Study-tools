@@ -366,6 +366,7 @@ export interface SavedSession {
   summary: SummaryData | null;
   floorplans: Floorplan[];
   unitListing: UnitListing | null;
+  unitListingSelectedRows: number[];
   transactionSummaries: TransactionSummary[];
   wholeUnitRentalData: WholeUnitRentalData | null;
   askingPriceData: AskingPriceData | null;

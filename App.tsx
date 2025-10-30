@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import HomePage from './components/HomePage';
 import WelcomePage from './components/WelcomePage';
@@ -131,6 +132,7 @@ const App: React.FC = () => {
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [floorplans, setFloorplans] = useState<Floorplan[]>([]);
   const [unitListing, setUnitListing] = useState<UnitListing | null>(null);
+  const [unitListingSelectedRows, setUnitListingSelectedRows] = useState<Set<number>>(new Set());
   const [transactionSummaries, setTransactionSummaries] = useState<TransactionSummary[]>([]);
   const [wholeUnitRentalData, setWholeUnitRentalData] = useState<WholeUnitRentalData | null>(null);
   const [askingPriceData, setAskingPriceData] = useState<AskingPriceData | null>(null);
@@ -185,6 +187,7 @@ const App: React.FC = () => {
       summary,
       floorplans,
       unitListing,
+      unitListingSelectedRows: Array.from(unitListingSelectedRows),
       transactionSummaries,
       wholeUnitRentalData,
       askingPriceData,
@@ -232,6 +235,7 @@ const App: React.FC = () => {
       setSummary(sessionToLoad.summary);
       setFloorplans(sessionToLoad.floorplans);
       setUnitListing(sessionToLoad.unitListing);
+      setUnitListingSelectedRows(new Set(sessionToLoad.unitListingSelectedRows || []));
       setTransactionSummaries(sessionToLoad.transactionSummaries || []);
       setWholeUnitRentalData(sessionToLoad.wholeUnitRentalData || null);
       setAskingPriceData(sessionToLoad.askingPriceData || null);
@@ -323,6 +327,7 @@ const App: React.FC = () => {
     setSummary(null);
     setFloorplans([]);
     setUnitListing(null);
+    setUnitListingSelectedRows(new Set());
     setTransactionSummaries([]);
     setWholeUnitRentalData(null);
     setAskingPriceData(null);
@@ -343,6 +348,7 @@ const App: React.FC = () => {
     setSummary(null);
     setFloorplans([]);
     setUnitListing(null);
+    setUnitListingSelectedRows(new Set());
     setTransactionSummaries([]);
     setWholeUnitRentalData(null);
     setAskingPriceData(null);
@@ -468,6 +474,8 @@ const App: React.FC = () => {
   
   const handleSetUnitListing = (listing: UnitListing | null) => {
     setUnitListing(listing);
+    // When a new file is uploaded, selections for the old file are irrelevant.
+    setUnitListingSelectedRows(new Set());
   };
 
   const handleCreateProjectionsFromListings = (selectedUnits: { type: string; size: number; spaPrice: number }[]) => {
@@ -550,7 +558,13 @@ const App: React.FC = () => {
                 scraperMode={scraperMode} 
             />;
         case 'unitListing':
-            return <UnitListingPage listing={unitListing} onSetListing={handleSetUnitListing} onProceedToProjection={handleCreateProjectionsFromListings} />;
+            return <UnitListingPage 
+                listing={unitListing} 
+                onSetListing={handleSetUnitListing} 
+                onProceedToProjection={handleCreateProjectionsFromListings}
+                selectedRows={unitListingSelectedRows}
+                onSetSelectedRows={setUnitListingSelectedRows}
+            />;
         case 'projection':
             return <ProjectionPage
               properties={properties}

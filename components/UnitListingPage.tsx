@@ -1,3 +1,4 @@
+
 import React, { useRef, useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { UnitListing, UnitListingAnalysisResult } from '../types';
@@ -9,6 +10,8 @@ interface UnitListingPageProps {
   listing: UnitListing | null;
   onSetListing: (listing: UnitListing | null) => void;
   onProceedToProjection: (selectedUnits: { type: string; size: number; spaPrice: number }[]) => void;
+  selectedRows: Set<number>;
+  onSetSelectedRows: (selection: Set<number>) => void;
 }
 
 // Data structure for the "best deal" analysis result
@@ -17,12 +20,17 @@ interface BestDealAnalysis {
     winningUnits: { [size: string]: string | number };
 }
 
-const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing, onProceedToProjection }) => {
+const UnitListingPage: React.FC<UnitListingPageProps> = ({ 
+    listing, 
+    onSetListing, 
+    onProceedToProjection,
+    selectedRows,
+    onSetSelectedRows
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [highlightEnabled, setHighlightEnabled] = useState(false);
-  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [columnAnalysis, setColumnAnalysis] = useState<UnitListingAnalysisResult | null>(null);
 
@@ -109,7 +117,7 @@ const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing
             rows: jsonData,
         });
         setHighlightEnabled(false);
-        setSelectedRows(new Set());
+        onSetSelectedRows(new Set());
 
       } catch (err: any) {
          setError(`Error processing file: ${err.message}`);
@@ -158,11 +166,11 @@ const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing
     setColumnAnalysis(null);
     setError(null);
     setHighlightEnabled(false);
-    setSelectedRows(new Set());
+    onSetSelectedRows(new Set());
   };
 
   const handleSelectRow = (rowIndex: number) => {
-    setSelectedRows(prev => {
+    onSetSelectedRows(prev => {
         const newSet = new Set(prev);
         if (newSet.has(rowIndex)) {
             newSet.delete(rowIndex);
@@ -176,9 +184,9 @@ const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.checked) {
           const allRowIndices = new Set(listing?.rows.map((_, index) => index) || []);
-          setSelectedRows(allRowIndices);
+          onSetSelectedRows(allRowIndices);
       } else {
-          setSelectedRows(new Set());
+          onSetSelectedRows(new Set());
       }
   };
 
@@ -190,10 +198,11 @@ const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing
       const selectedData = Array.from(selectedRows).map(rowIndex => {
           // FIX: Removed unnecessary cast as `listing.rows` is now strongly typed.
           const row = listing.rows[rowIndex];
+          // FIX: Explicitly cast `row` to `Record<string, any>` to resolve TypeScript indexing error.
           return {
-              type: String(row[typeKey] || 'N/A'),
-              size: Number(row[sizeKey] || 0),
-              spaPrice: Number(row[priceKey] || 0),
+              type: String((row as Record<string, any>)[typeKey] || 'N/A'),
+              size: Number((row as Record<string, any>)[sizeKey] || 0),
+              spaPrice: Number((row as Record<string, any>)[priceKey] || 0),
           };
       });
 
@@ -338,8 +347,8 @@ const UnitListingPage: React.FC<UnitListingPageProps> = ({ listing, onSetListing
                                             key={`${rowIndex}-${header}`} 
                                             className={`p-3 text-gray-700 whitespace-nowrap ${isBestDealRow ? 'font-bold' : ''}`}
                                         >
-                                            {/* FIX: Cast row to 'any' to resolve 'unknown' index type error. This is a safe escape hatch for data from external files. */}
-                                            {String((row as any)[header])}
+                                            {/* FIX: Cast row to a more specific Record type instead of 'any' to resolve the 'unknown' index type error while maintaining better type safety. */}
+                                            {String((row as Record<string, any>)[header])}
                                         </td>
                                     ))}
                                 </tr>
